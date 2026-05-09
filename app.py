@@ -398,50 +398,53 @@ with tab5:
             )
         
         if len(yoy_years) >= 2 and yoy_ticker:
-            # --- Section 1: Risk Severity Trend Chart ---
+            # --- Section 1: Risk Severity Grouped Bar Chart ---
             st.markdown(f"#### {COMPANIES.get(yoy_ticker, yoy_ticker)} — Risk Severity Trend")
             
             df_trend = RiskComparator.get_risk_trend(yoy_ticker, yoy_years)
             
             if not df_trend.empty:
-                # Melt for Plotly line chart
+                # Build a melted DataFrame for grouped bar chart
                 df_melted = df_trend.reset_index().melt(
                     id_vars="Year",
                     var_name="Risk Category",
                     value_name="Severity Score"
                 )
-                
                 severity_labels = {0: "None", 1: "Low", 2: "Medium", 3: "High"}
-                df_melted["Severity Label"] = df_melted["Severity Score"].map(severity_labels)
-                # Convert Year to string for categorical x-axis (evenly spaced)
+                df_melted["Severity"] = df_melted["Severity Score"].map(severity_labels)
                 df_melted["Year"] = df_melted["Year"].apply(lambda y: f"FY{y}")
-                
-                fig = px.line(
+                # Shorten risk category names for readability
+                df_melted["Category"] = df_melted["Risk Category"].str.replace(" Risk", "")
+
+                # Grouped bar chart — each category visible side-by-side
+                fig_bar = px.bar(
                     df_melted,
-                    x="Year",
+                    x="Category",
                     y="Severity Score",
-                    color="Risk Category",
-                    markers=True,
-                    hover_data=["Severity Label"],
-                    title="Risk Severity Over Time",
-                    labels={"Severity Score": "Severity"},
+                    color="Year",
+                    barmode="group",
+                    text="Severity",
+                    hover_data=["Risk Category", "Severity"],
+                    title="Risk Severity Comparison by Category",
+                    color_discrete_sequence=["#636EFA", "#EF553B", "#00CC96", "#AB63FA", "#FFA15A"],
                 )
-                fig.update_traces(marker=dict(size=10), line=dict(width=2.5))
-                fig.update_layout(
-                    height=450,
-                    xaxis=dict(type="category"),
-                    yaxis=dict(range=[-0.2, 3.5], dtick=1,
+                fig_bar.update_traces(textposition="outside", textfont_size=11)
+                fig_bar.update_layout(
+                    height=480,
+                    yaxis=dict(range=[0, 3.8], dtick=1,
                                tickvals=[0, 1, 2, 3],
                                ticktext=["None", "Low", "Medium", "High"]),
-                    legend=dict(orientation="h", yanchor="bottom", y=-0.35),
+                    xaxis=dict(tickangle=-30),
+                    xaxis_title="",
+                    yaxis_title="Severity",
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
                 )
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig_bar, use_container_width=True)
                 
                 # --- Section 2: Radar Chart Comparison ---
                 st.markdown("#### Radar Chart Comparison")
                 
                 categories = list(df_trend.columns)
-                # Shorten labels for radar readability
                 short_labels = [c.replace(" / ", "/").replace(" Risk", "") for c in categories]
                 
                 fig_radar = go.Figure()
@@ -450,7 +453,7 @@ with tab5:
                 for i, (year_val, row) in enumerate(df_trend.iterrows()):
                     color = radar_colors[i % len(radar_colors)]
                     fig_radar.add_trace(go.Scatterpolar(
-                        r=list(row.values) + [row.values[0]],  # close the polygon
+                        r=list(row.values) + [row.values[0]],
                         theta=short_labels + [short_labels[0]],
                         fill='toself',
                         name=f"FY{year_val}",
@@ -477,19 +480,20 @@ with tab5:
                 
                 sorted_years = sorted(yoy_years)
                 
-                # Load profiles for each year
+                # Load profiles AND chunk metadata for each year
                 year_profiles = {}
+                year_chunk_lookups = {}
                 for y in sorted_years:
                     comp_y = RiskComparator(year=y)
                     prof = comp_y.get_company_profile(yoy_ticker)
                     if prof:
                         year_profiles[y] = {r["risk_category"]: r for r in prof["risk_assessments"]}
+                    year_chunk_lookups[y] = load_chunk_metadata(y)
                 
                 if year_profiles:
                     for cat in RISK_CATEGORIES:
                         cat_name = cat["name"]
                         
-                        # Check if there's any difference across years
                         explanations = []
                         severities = []
                         for y in sorted_years:
@@ -497,7 +501,6 @@ with tab5:
                             explanations.append(risk.get("explanation", "N/A"))
                             severities.append(risk.get("severity", "none") if risk.get("is_present") else "none")
                         
-                        # Determine if anything changed
                         sev_changed = len(set(severities)) > 1
                         exp_changed = len(set(explanations)) > 1
                         
@@ -518,6 +521,7 @@ with tab5:
                             for i, y in enumerate(sorted_years):
                                 risk = year_profiles.get(y, {}).get(cat_name, {})
                                 sev = risk.get("severity", "none") if risk.get("is_present") else "none"
+                                lookup = year_chunk_lookups.get(y, {})
                                 with cols[i]:
                                     sev_class = f"risk-{sev.lower()}" if sev != "none" else ""
                                     st.markdown(f"##### FY{y}")
@@ -528,7 +532,15 @@ with tab5:
                                     if snippets:
                                         st.markdown("**Evidence:**")
                                         for s_idx, snippet in enumerate(snippets[:2]):
-                                            st.markdown(f"<div class='evidence-box' style='font-size:0.8em'>\"{snippet[:200]}{'...' if len(snippet) > 200 else ''}\"</div>", unsafe_allow_html=True)
+                                            # Resolve chunk IDs to actual text
+                                            chunk_id_match = re.search(r"ID:\s*([A-Za-z0-9_]+)", snippet)
+                                            if chunk_id_match:
+                                                chunk_id = chunk_id_match.group(1)
+                                                full_text = lookup.get(chunk_id, snippet)
+                                                display_text = full_text[:300] + "..." if len(full_text) > 300 else full_text
+                                            else:
+                                                display_text = snippet[:300] + "..." if len(snippet) > 300 else snippet
+                                            st.markdown(f"<div class='evidence-box' style='font-size:0.8em'>{display_text}</div>", unsafe_allow_html=True)
                                     else:
                                         st.caption("No evidence snippets")
             else:
@@ -536,3 +548,4 @@ with tab5:
         
         elif yoy_ticker and len(yoy_years) < 2:
             st.info("Karşılaştırma için en az 2 yıl seçin.")
+
