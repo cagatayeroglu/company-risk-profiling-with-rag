@@ -16,11 +16,13 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from config import COMPANIES, RISK_CATEGORIES, get_risk_profiles_dir, AVAILABLE_YEARS
 
-# Severity mapping for numeric scoring
+# Severity mapping for numeric scoring (5-point scale)
 SEVERITY_SCORE = {
+    "critical": 4,
     "high": 3,
     "medium": 2,
     "low": 1,
+    "negligible": 0,
     "none": 0  # if is_present == False
 }
 

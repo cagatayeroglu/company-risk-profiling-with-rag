@@ -61,12 +61,21 @@ st.markdown("""
     }
 
     /* === Risk Severity Pills === */
+    .risk-critical {
+        color: #ff0040 !important; font-weight: 800;
+        text-shadow: 0 0 12px rgba(255,0,64,0.5);
+        animation: pulse-critical 2s ease-in-out infinite;
+    }
+    @keyframes pulse-critical {
+        0%, 100% { opacity: 1; } 50% { opacity: 0.7; }
+    }
     .risk-high {
         color: #ff4757 !important; font-weight: 700;
         text-shadow: 0 0 8px rgba(255,71,87,0.3);
     }
     .risk-medium { color: #ffa502 !important; font-weight: 700; }
     .risk-low { color: #2ed573 !important; font-weight: 700; }
+    .risk-negligible { color: #636e72 !important; font-weight: 500; font-style: italic; }
 
     /* === Evidence Box === */
     .evidence-box {
@@ -496,7 +505,7 @@ with tab5:
                     var_name="Risk Category",
                     value_name="Severity Score"
                 )
-                severity_labels = {0: "None", 1: "Low", 2: "Medium", 3: "High"}
+                severity_labels = {0: "Negligible", 1: "Low", 2: "Medium", 3: "High", 4: "Critical"}
                 df_melted["Severity"] = df_melted["Severity Score"].map(severity_labels)
                 df_melted["Year"] = df_melted["Year"].apply(lambda y: f"FY{y}")
                 # Shorten risk category names for readability
@@ -519,9 +528,9 @@ with tab5:
                     height=480,
                     paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
                     font=dict(color="#c8c8d8"),
-                    yaxis=dict(range=[0, 3.8], dtick=1,
-                               tickvals=[0, 1, 2, 3],
-                               ticktext=["None", "Low", "Medium", "High"],
+                    yaxis=dict(range=[0, 4.8], dtick=1,
+                               tickvals=[0, 1, 2, 3, 4],
+                               ticktext=["Negligible", "Low", "Medium", "High", "Critical"],
                                gridcolor="rgba(255,255,255,0.05)"),
                     xaxis=dict(tickangle=-30),
                     xaxis_title="", yaxis_title="Severity",
@@ -553,9 +562,9 @@ with tab5:
                 fig_radar.update_layout(
                     polar=dict(
                         bgcolor="rgba(0,0,0,0)",
-                        radialaxis=dict(visible=True, range=[0, 3],
-                                       tickvals=[0, 1, 2, 3],
-                                       ticktext=["None", "Low", "Med", "High"],
+                        radialaxis=dict(visible=True, range=[0, 4],
+                                       tickvals=[0, 1, 2, 3, 4],
+                                       ticktext=["N/A", "Low", "Med", "High", "Crit"],
                                        gridcolor="rgba(255,255,255,0.08)",
                                        color="#8888aa"),
                         angularaxis=dict(gridcolor="rgba(255,255,255,0.06)", color="#c8c8d8"),

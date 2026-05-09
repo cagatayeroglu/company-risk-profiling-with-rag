@@ -5,6 +5,8 @@ Defines the system prompt, user prompt templates, and the strict JSON schema
 used by the LLM to produce structured risk profiles.
 """
 
+from __future__ import annotations
+
 # ============================================================
 # JSON Output Schema
 # ============================================================
@@ -17,8 +19,8 @@ RISK_PROFILE_JSON_SCHEMA = {
         "is_present": {"type": "boolean", "description": "Whether this risk is mentioned/present"},
         "severity": {
             "type": "string",
-            "enum": ["low", "medium", "high"],
-            "description": "Estimated severity level",
+            "enum": ["negligible", "low", "medium", "high", "critical"],
+            "description": "Estimated severity level on 5-point scale",
         },
         "explanation": {
             "type": "string",
@@ -53,21 +55,27 @@ RISK_PROFILE_JSON_SCHEMA = {
 # System Prompt
 # ============================================================
 
-SYSTEM_PROMPT = """You are a financial risk analyst AI. Your task is to analyze company risk disclosures from SEC Form 10-K filings and produce structured risk assessments.
+SYSTEM_PROMPT = """You are a senior financial risk analyst specializing in SEC 10-K filings. You produce precise, differentiated risk assessments. You NEVER default to generic scores.
 
-RULES:
+STRICT RULES:
 1. Base your assessment ONLY on the provided evidence text. Do NOT use external knowledge.
 2. Output ONLY valid JSON matching the specified schema. No extra text before or after the JSON.
 3. Every claim in your explanation MUST be directly supported by the evidence snippets.
-4. If the evidence does not clearly mention the risk category, set is_present to false and severity to "low".
-5. Evidence snippets must be direct quotes from the provided text, not paraphrased.
+4. If the evidence does not clearly mention the risk category, set is_present to false and severity to "negligible".
+5. Evidence snippets must be DIRECT QUOTES from the provided text — not paraphrased.
 6. Keep explanations concise: 1-3 sentences maximum.
-7. Confidence should reflect how clearly the evidence supports your assessment. Provide a precise, granular 2-decimal float (e.g., 0.94, 0.87, 0.73) rather than rounding to nearest tenths:
-   - Near 0.95+: Very clear, explicit risk discussion in evidence
-   - Near 0.80+: Moderate evidence, some interpretation needed
-   - Near 0.60+: Weak or indirect evidence
-   - Near 0.40+: Minimal evidence, mostly inferred
-   - Near 0.10+: No relevant evidence found"""
+
+CRITICAL — CONFIDENCE SCORING:
+You MUST vary your confidence scores meaningfully. Do NOT default to 0.94 or round numbers.
+Think step-by-step about how strong the evidence actually is:
+- 0.90-0.99: Multiple explicit, detailed paragraphs directly discussing this specific risk with quantified impact
+- 0.75-0.89: Clear discussion of the risk but lacking specific financial figures or detailed mitigation plans
+- 0.55-0.74: Risk is mentioned but only in passing, within broader context, or as boilerplate language
+- 0.30-0.54: Only tangentially related evidence; requires significant interpretation
+- 0.05-0.29: No meaningful evidence for this risk category
+
+CRITICAL — SEVERITY DIFFERENTIATION:
+You must carefully distinguish between severity levels. Most risks should NOT be "high" — reserve "high" and "critical" for truly exceptional risks with clear financial materiality."""
 
 # ============================================================
 # User Prompt Template
@@ -86,16 +94,20 @@ Based ONLY on the evidence above, produce a JSON risk assessment with this exact
     "company": "{ticker}",
     "risk_category": "{risk_category}",
     "is_present": true/false,
-    "severity": "low" | "medium" | "high",
+    "severity": "negligible" | "low" | "medium" | "high" | "critical",
     "explanation": "1-3 sentence explanation based on evidence",
     "evidence_snippets": ["direct quote 1", "direct quote 2"],
     "confidence": 0.0 to 1.0
 }}
 
-Severity guidelines:
-- "high": The company explicitly discusses significant, material risks in this category with potential major financial impact.
-- "medium": The company mentions risks in this category but describes them as manageable or mitigated.
-- "low": The risk is briefly mentioned or only indirectly relevant, or no clear evidence found.
+SEVERITY SCALE (use the full range — do NOT default to "high"):
+- "critical": Company describes this as an existential or enterprise-threatening risk with potential for massive financial loss, regulatory shutdown, or fundamental business model disruption. Must include language like "material adverse effect", quantified losses, or active ongoing crises.
+- "high": Company explicitly warns of significant, material risks with concrete examples of past incidents or high-probability future impacts. Evidence includes specific dollar amounts, lawsuits, or regulatory actions.
+- "medium": Company acknowledges and discusses the risk meaningfully, describes mitigation strategies, but the risk is typical for the industry and well-managed. Standard risk factor language without exceptional urgency.
+- "low": Risk is briefly mentioned in a general or boilerplate manner. No specific incidents, no quantified impact, listed among many generic risks without emphasis.
+- "negligible": Risk is not meaningfully discussed. Only indirect or tangential references, or no relevant evidence at all.
+
+IMPORTANT: Most well-managed companies have MEDIUM-level risks. Only assign "high" or "critical" if the evidence clearly justifies it with specific incidents, quantified impacts, or urgent language. Standard boilerplate risk factors = "medium" at most.
 
 Output ONLY the JSON object, nothing else:"""
 
