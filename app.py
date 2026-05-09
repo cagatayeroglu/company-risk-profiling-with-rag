@@ -142,13 +142,21 @@ st.sidebar.markdown("---")
 # Year selector — show ALL years so user can pick any and fetch data
 years_with_data = RiskComparator.get_available_years()
 
+# Initialize session state for year if not present
+if "selected_year_ss" not in st.session_state:
+    st.session_state.selected_year_ss = DEFAULT_YEAR
+
 selected_year = st.sidebar.selectbox(
     "📅 Analiz Yılı (Fiscal Year)",
     options=AVAILABLE_YEARS,
-    index=AVAILABLE_YEARS.index(DEFAULT_YEAR),
+    index=AVAILABLE_YEARS.index(st.session_state.selected_year_ss),
+    key="main_year_selector",
     help="Hangi yılın 10-K raporlarını incelemek istiyorsunuz?",
     format_func=lambda y: f"FY{y} ✅" if y in years_with_data else f"FY{y}"
 )
+
+# Update session state whenever the selectbox changes
+st.session_state.selected_year_ss = selected_year
 
 has_data = selected_year in years_with_data
 
@@ -215,6 +223,7 @@ if st.sidebar.button("Verileri Çek & Analiz Et"):
             success, msg = run_live_analysis(new_ticker, year=live_year, status_placeholder=status_box)
         if success:
             st.sidebar.success(f"✅ {new_ticker.upper()} (FY{live_year}) başarıyla eklendi!")
+            st.session_state.selected_year_ss = live_year  # Set the view to the year just analyzed
             st.cache_data.clear()
             st.rerun()
         else:
