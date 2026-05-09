@@ -133,7 +133,7 @@ if st.sidebar.button("Verileri Çek & Analiz Et"):
 # Main Header
 # ============================================================
 st.markdown('<p class="main-header">Automated Risk Profiling Dashboard</p>', unsafe_allow_html=True)
-st.markdown('<p class="sub-header">Powered by Qwen2.5-3B, FAISS, and BAAI/bge-small-en-v1.5</p>', unsafe_allow_html=True)
+st.markdown('<p class="sub-header">Powered by Llama-3.1-8B (Groq), FAISS, and BAAI/bge-small-en-v1.5</p>', unsafe_allow_html=True)
 
 # Tabs
 tab1, tab2, tab3, tab4 = st.tabs([
