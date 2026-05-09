@@ -9,7 +9,11 @@ import plotly.graph_objects as go
 
 sys.path.insert(0, os.path.dirname(__file__))
 from src.comparator import RiskComparator
-from config import COMPANIES, RISK_CATEGORIES, EMBEDDINGS_DIR
+from config import (
+    COMPANIES, RISK_CATEGORIES, EMBEDDINGS_DIR,
+    AVAILABLE_YEARS, DEFAULT_YEAR,
+    get_embeddings_dir, get_risk_profiles_dir,
+)
 
 # ============================================================
 # Page Configuration & Styling
@@ -67,65 +71,106 @@ st.markdown("""
         box-shadow: 0 4px 6px rgba(0,0,0,0.05);
         text-align: center;
     }
+    .year-badge {
+        display: inline-block;
+        background: linear-gradient(135deg, #4e4376, #2b5876);
+        color: white;
+        padding: 4px 12px;
+        border-radius: 12px;
+        font-size: 0.85em;
+        font-weight: 600;
+        margin-left: 8px;
+    }
 </style>
 """, unsafe_allow_html=True)
 
 # ============================================================
-# Data Loading
-# ============================================================
-@st.cache_data
-def load_data():
-    comp = RiskComparator()
-    return comp
-
-@st.cache_data
-def load_chunk_metadata():
-    """Load metadata to map Chunk IDs back to full text."""
-    meta_path = os.path.join(EMBEDDINGS_DIR, "chunk_metadata.pkl")
-    if os.path.exists(meta_path):
-        with open(meta_path, "rb") as f:
-            metadata = pickle.load(f)
-            # Create a lookup by chunk_id string
-            return {meta["chunk_id"]: meta["text"] for meta in metadata.values()}
-    return {}
-
-comparator = load_data()
-chunk_lookup = load_chunk_metadata()
-available_companies = comparator.get_available_companies()
-
-if not available_companies:
-    st.error("No risk profiles found. Please run the LLM extraction or generate mock profiles first.")
-    st.stop()
-
-# ============================================================
-# Sidebar
+# Sidebar: Year Selector & Navigation
 # ============================================================
 st.sidebar.title("Navigation")
 st.sidebar.markdown("Explore automated risk profiles extracted from Form 10-K filings using Multi-Document RAG.")
 st.sidebar.markdown("---")
 
-st.sidebar.markdown("**Mevcut Şirketler:**")
-for ticker in available_companies:
-    name = COMPANIES.get(ticker, ticker)
-    st.sidebar.markdown(f"- **{ticker}**: {name}")
+# Year selector — show ALL years so user can pick any and fetch data
+years_with_data = RiskComparator.get_available_years()
+
+selected_year = st.sidebar.selectbox(
+    "📅 Analiz Yılı (Fiscal Year)",
+    options=AVAILABLE_YEARS,
+    index=AVAILABLE_YEARS.index(DEFAULT_YEAR),
+    help="Hangi yılın 10-K raporlarını incelemek istiyorsunuz?",
+    format_func=lambda y: f"FY{y} ✅" if y in years_with_data else f"FY{y}"
+)
+
+has_data = selected_year in years_with_data
 
 st.sidebar.markdown("---")
+
+# ============================================================
+# Data Loading (year-specific)
+# ============================================================
+@st.cache_data
+def load_data(year):
+    comp = RiskComparator(year=year)
+    return comp
+
+@st.cache_data
+def load_chunk_metadata(year):
+    """Load metadata to map Chunk IDs back to full text."""
+    # Try year-specific first
+    year_emb_dir = get_embeddings_dir(year)
+    meta_path = os.path.join(year_emb_dir, "chunk_metadata.pkl")
+    
+    # Fallback to flat dir
+    if not os.path.exists(meta_path):
+        meta_path = os.path.join(EMBEDDINGS_DIR, "chunk_metadata.pkl")
+    
+    if os.path.exists(meta_path):
+        with open(meta_path, "rb") as f:
+            metadata = pickle.load(f)
+            return {meta["chunk_id"]: meta["text"] for meta in metadata.values()}
+    return {}
+
+comparator = load_data(selected_year)
+chunk_lookup = load_chunk_metadata(selected_year)
+available_companies = comparator.get_available_companies()
+
+if not available_companies:
+    has_data = False
+
+# Sidebar: Available companies (only if data exists)
+if has_data:
+    st.sidebar.markdown(f"**Mevcut Şirketler (FY{selected_year}):**")
+    for ticker in available_companies:
+        name = COMPANIES.get(ticker, ticker)
+        st.sidebar.markdown(f"- **{ticker}**: {name}")
+else:
+    st.sidebar.warning(f"FY{selected_year} için henüz veri yok.")
+
+st.sidebar.markdown("---")
+
+# Live analysis section
 st.sidebar.markdown("### ⚡ Canlı Hisse Analizi")
 new_ticker = st.sidebar.text_input("Ticker Girin (Örn: NFLX, GOOGL)", max_chars=5)
+live_year = st.sidebar.selectbox(
+    "Hangi Yıl İçin?",
+    options=AVAILABLE_YEARS,
+    index=AVAILABLE_YEARS.index(selected_year) if selected_year in AVAILABLE_YEARS else len(AVAILABLE_YEARS) - 1,
+    key="live_year"
+)
+
 if st.sidebar.button("Verileri Çek & Analiz Et"):
-    if new_ticker and new_ticker.upper() not in available_companies:
+    if new_ticker:
         from src.live_pipeline import run_live_analysis
         status_box = st.sidebar.empty()
-        with st.spinner("İşlem sürüyor, Llama-3 çalışıyor..."):
-            success, msg = run_live_analysis(new_ticker, status_placeholder=status_box)
+        with st.spinner(f"FY{live_year} için {new_ticker.upper()} analiz ediliyor..."):
+            success, msg = run_live_analysis(new_ticker, year=live_year, status_placeholder=status_box)
         if success:
-            st.sidebar.success(f"✅ {new_ticker.upper()} başarıyla eklendi!")
+            st.sidebar.success(f"✅ {new_ticker.upper()} (FY{live_year}) başarıyla eklendi!")
             st.cache_data.clear()
             st.rerun()
         else:
             st.sidebar.error(msg)
-    elif new_ticker.upper() in available_companies:
-        st.sidebar.warning(f"{new_ticker.upper()} zaten sistemde var!")
     else:
         st.sidebar.warning("Lütfen bir Ticker girin.")
 
@@ -133,21 +178,48 @@ if st.sidebar.button("Verileri Çek & Analiz Et"):
 # Main Header
 # ============================================================
 st.markdown('<p class="main-header">Automated Risk Profiling Dashboard</p>', unsafe_allow_html=True)
-st.markdown('<p class="sub-header">Powered by Llama-3.1-8B (Groq), FAISS, and BAAI/bge-small-en-v1.5</p>', unsafe_allow_html=True)
+st.markdown(f'<p class="sub-header">Powered by Llama-3.1-8B (Groq), FAISS, and BAAI/bge-small-en-v1.5 <span class="year-badge">FY{selected_year}</span></p>', unsafe_allow_html=True)
+
+# If no data for selected year, show empty state
+if not has_data:
+    st.markdown("---")
+    st.markdown(f"""
+    ### 📭 FY{selected_year} için henüz veri yok
+    
+    Bu yılın 10-K raporları henüz analiz edilmemiş. Veri çekmek için:
+    
+    1. **Sol paneldeki** "⚡ Canlı Hisse Analizi" bölümüne gidin
+    2. Bir **Ticker** girin (Örn: AAPL, MSFT, TSLA)
+    3. **"Hangi Yıl İçin?"** bölümünden **FY{selected_year}** seçili olduğundan emin olun
+    4. **"Verileri Çek & Analiz Et"** butonuna tıklayın
+    
+    Sistem otomatik olarak SEC EDGAR'dan o yılın 10-K raporunu çekip, 
+    Llama-3 ile risk analizi yapacaktır.
+    """)
+    
+    # Still show Year-over-Year tab if other years have data
+    all_available_years = RiskComparator.get_available_years()
+    if len(all_available_years) >= 2:
+        st.markdown("---")
+        st.markdown("💡 **Not:** Mevcut verisi olan yıllar arasında karşılaştırma yapmak için yukarıdan farklı bir yıl seçebilirsiniz.")
+        st.markdown(f"**Verisi olan yıllar:** {', '.join(f'FY{y}' for y in all_available_years)}")
+    
+    st.stop()
 
 # Tabs
-tab1, tab2, tab3, tab4 = st.tabs([
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "🌡️ Risk Heatmap", 
     "🏆 Top Risks by Company", 
     "🔍 Evidence Explorer", 
-    "⚖️ Company Comparison"
+    "⚖️ Company Comparison",
+    "📈 Year-over-Year Analysis"
 ])
 
 # ============================================================
 # Tab 1: Risk Heatmap
 # ============================================================
 with tab1:
-    st.markdown("### Industry Risk Overview")
+    st.markdown(f"### Industry Risk Overview — FY{selected_year}")
     st.markdown("A macro view of risk severity across all analyzed companies and categories.")
     
     df_scores = comparator.get_risk_heatmap_data()
@@ -180,7 +252,7 @@ with tab1:
 # Tab 2: Top Risks by Company
 # ============================================================
 with tab2:
-    st.markdown("### Company Deep Dive")
+    st.markdown(f"### Company Deep Dive — FY{selected_year}")
     
     col1, col2 = st.columns([1, 3])
     with col1:
@@ -218,7 +290,7 @@ with tab2:
 # Tab 3: Evidence Explorer
 # ============================================================
 with tab3:
-    st.markdown("### Source Traceability")
+    st.markdown(f"### Source Traceability — FY{selected_year}")
     st.markdown("Investigate the exact 10-K evidence snippets the LLM used to make its assessment.")
     
     col1, col2 = st.columns(2)
@@ -260,7 +332,7 @@ with tab3:
 # Tab 4: Company Comparison
 # ============================================================
 with tab4:
-    st.markdown("### Side-by-Side Comparison")
+    st.markdown(f"### Side-by-Side Comparison — FY{selected_year}")
     
     col1, col2 = st.columns(2)
     with col1:
@@ -291,3 +363,176 @@ with tab4:
                     st.write(row[f"{comp2} Explanation"])
                     
             st.markdown("---")
+
+# ============================================================
+# Tab 5: Year-over-Year Analysis (NEW)
+# ============================================================
+with tab5:
+    st.markdown("### 📈 Year-over-Year Risk Analysis")
+    st.markdown("Compare how a company's risk profile evolved over different fiscal years.")
+    
+    all_available_years = RiskComparator.get_available_years()
+    
+    if len(all_available_years) < 2:
+        st.info(
+            f"Yıl bazlı karşılaştırma için en az **2 farklı yılın** verisine ihtiyaç var.\n\n"
+            f"Şu anda sadece **FY{all_available_years[0] if all_available_years else '—'}** verisi mevcut.\n\n"
+            f"Sidebar'daki **Canlı Hisse Analizi** bölümünden farklı bir yıl seçerek yeni veri çekebilirsiniz."
+        )
+    else:
+        col1, col2, col3 = st.columns([1, 1, 2])
+        
+        with col1:
+            yoy_ticker = st.selectbox(
+                "Şirket Seçin",
+                options=list(COMPANIES.keys()),
+                key="yoy_ticker"
+            )
+        
+        with col2:
+            yoy_years = st.multiselect(
+                "Yılları Seçin",
+                options=all_available_years,
+                default=all_available_years,
+                key="yoy_years"
+            )
+        
+        if len(yoy_years) >= 2 and yoy_ticker:
+            # --- Section 1: Risk Severity Trend Chart ---
+            st.markdown(f"#### {COMPANIES.get(yoy_ticker, yoy_ticker)} — Risk Severity Trend")
+            
+            df_trend = RiskComparator.get_risk_trend(yoy_ticker, yoy_years)
+            
+            if not df_trend.empty:
+                # Melt for Plotly line chart
+                df_melted = df_trend.reset_index().melt(
+                    id_vars="Year",
+                    var_name="Risk Category",
+                    value_name="Severity Score"
+                )
+                
+                severity_labels = {0: "None", 1: "Low", 2: "Medium", 3: "High"}
+                df_melted["Severity Label"] = df_melted["Severity Score"].map(severity_labels)
+                # Convert Year to string for categorical x-axis (evenly spaced)
+                df_melted["Year"] = df_melted["Year"].apply(lambda y: f"FY{y}")
+                
+                fig = px.line(
+                    df_melted,
+                    x="Year",
+                    y="Severity Score",
+                    color="Risk Category",
+                    markers=True,
+                    hover_data=["Severity Label"],
+                    title="Risk Severity Over Time",
+                    labels={"Severity Score": "Severity"},
+                )
+                fig.update_traces(marker=dict(size=10), line=dict(width=2.5))
+                fig.update_layout(
+                    height=450,
+                    xaxis=dict(type="category"),
+                    yaxis=dict(range=[-0.2, 3.5], dtick=1,
+                               tickvals=[0, 1, 2, 3],
+                               ticktext=["None", "Low", "Medium", "High"]),
+                    legend=dict(orientation="h", yanchor="bottom", y=-0.35),
+                )
+                st.plotly_chart(fig, use_container_width=True)
+                
+                # --- Section 2: Radar Chart Comparison ---
+                st.markdown("#### Radar Chart Comparison")
+                
+                categories = list(df_trend.columns)
+                # Shorten labels for radar readability
+                short_labels = [c.replace(" / ", "/").replace(" Risk", "") for c in categories]
+                
+                fig_radar = go.Figure()
+                radar_colors = ["#636EFA", "#EF553B", "#00CC96", "#AB63FA", "#FFA15A"]
+                
+                for i, (year_val, row) in enumerate(df_trend.iterrows()):
+                    color = radar_colors[i % len(radar_colors)]
+                    fig_radar.add_trace(go.Scatterpolar(
+                        r=list(row.values) + [row.values[0]],  # close the polygon
+                        theta=short_labels + [short_labels[0]],
+                        fill='toself',
+                        name=f"FY{year_val}",
+                        opacity=0.35,
+                        line=dict(color=color, width=2.5),
+                        marker=dict(size=6),
+                    ))
+                
+                fig_radar.update_layout(
+                    polar=dict(
+                        radialaxis=dict(visible=True, range=[0, 3],
+                                       tickvals=[0, 1, 2, 3],
+                                       ticktext=["None", "Low", "Med", "High"]),
+                    ),
+                    height=500,
+                    showlegend=True,
+                )
+                st.plotly_chart(fig_radar, use_container_width=True)
+                
+                # --- Section 3: Detailed Year-over-Year Comparison ---
+                st.markdown("---")
+                st.markdown("#### 📝 Detaylı Yıl Karşılaştırması (Explanation & Evidence)")
+                st.markdown("Her risk kategorisi için yıllar arasındaki **LLM değerlendirme** ve **kanıt farklarını** inceleyin.")
+                
+                sorted_years = sorted(yoy_years)
+                
+                # Load profiles for each year
+                year_profiles = {}
+                for y in sorted_years:
+                    comp_y = RiskComparator(year=y)
+                    prof = comp_y.get_company_profile(yoy_ticker)
+                    if prof:
+                        year_profiles[y] = {r["risk_category"]: r for r in prof["risk_assessments"]}
+                
+                if year_profiles:
+                    for cat in RISK_CATEGORIES:
+                        cat_name = cat["name"]
+                        
+                        # Check if there's any difference across years
+                        explanations = []
+                        severities = []
+                        for y in sorted_years:
+                            risk = year_profiles.get(y, {}).get(cat_name, {})
+                            explanations.append(risk.get("explanation", "N/A"))
+                            severities.append(risk.get("severity", "none") if risk.get("is_present") else "none")
+                        
+                        # Determine if anything changed
+                        sev_changed = len(set(severities)) > 1
+                        exp_changed = len(set(explanations)) > 1
+                        
+                        if sev_changed:
+                            change_icon = "🔄"
+                        elif exp_changed:
+                            change_icon = "📝"
+                        else:
+                            change_icon = "➡️"
+                        
+                        with st.expander(
+                            f"{change_icon} {cat_name} — " + " → ".join(
+                                f"FY{y}: **{sev.capitalize()}**" for y, sev in zip(sorted_years, severities)
+                            ),
+                            expanded=sev_changed
+                        ):
+                            cols = st.columns(len(sorted_years))
+                            for i, y in enumerate(sorted_years):
+                                risk = year_profiles.get(y, {}).get(cat_name, {})
+                                sev = risk.get("severity", "none") if risk.get("is_present") else "none"
+                                with cols[i]:
+                                    sev_class = f"risk-{sev.lower()}" if sev != "none" else ""
+                                    st.markdown(f"##### FY{y}")
+                                    st.markdown(f"**Severity:** <span class='{sev_class}'>{sev.upper()}</span> | **Confidence:** {risk.get('confidence', 0):.2f}", unsafe_allow_html=True)
+                                    st.markdown(f"**Assessment:** {risk.get('explanation', 'N/A')}")
+                                    
+                                    snippets = risk.get("evidence_snippets", [])
+                                    if snippets:
+                                        st.markdown("**Evidence:**")
+                                        for s_idx, snippet in enumerate(snippets[:2]):
+                                            st.markdown(f"<div class='evidence-box' style='font-size:0.8em'>\"{snippet[:200]}{'...' if len(snippet) > 200 else ''}\"</div>", unsafe_allow_html=True)
+                                    else:
+                                        st.caption("No evidence snippets")
+            else:
+                st.warning(f"{yoy_ticker} için seçilen yıllarda veri bulunamadı.")
+        
+        elif yoy_ticker and len(yoy_years) < 2:
+            st.info("Karşılaştırma için en az 2 yıl seçin.")

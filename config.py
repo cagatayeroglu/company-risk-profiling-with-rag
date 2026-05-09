@@ -13,6 +13,32 @@ RAW_DIR = os.path.join(DATA_DIR, "raw")
 EXTRACTED_DIR = os.path.join(DATA_DIR, "extracted")
 CHUNKS_DIR = os.path.join(DATA_DIR, "chunks")
 EMBEDDINGS_DIR = os.path.join(DATA_DIR, "embeddings")
+RISK_PROFILES_DIR = os.path.join(DATA_DIR, "risk_profiles")
+
+# ============================================================
+# Multi-Year Configuration
+# ============================================================
+AVAILABLE_YEARS = [2021, 2022, 2023, 2024, 2025]
+DEFAULT_YEAR = 2025
+
+def get_year_dir(base_dir: str, year: int) -> str:
+    """Get the year-specific subdirectory path."""
+    return os.path.join(base_dir, str(year))
+
+def get_raw_dir(year: int) -> str:
+    return get_year_dir(RAW_DIR, year)
+
+def get_extracted_dir(year: int) -> str:
+    return get_year_dir(EXTRACTED_DIR, year)
+
+def get_chunks_dir(year: int) -> str:
+    return get_year_dir(CHUNKS_DIR, year)
+
+def get_embeddings_dir(year: int) -> str:
+    return get_year_dir(EMBEDDINGS_DIR, year)
+
+def get_risk_profiles_dir(year: int) -> str:
+    return get_year_dir(RISK_PROFILES_DIR, year)
 
 # ============================================================
 # Target Companies (Ticker → Company Name)

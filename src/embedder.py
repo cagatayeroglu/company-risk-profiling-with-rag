@@ -18,6 +18,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from config import (
     CHUNKS_DIR, EMBEDDINGS_DIR,
     EMBEDDING_MODEL, EMBEDDING_DIMENSION,
+    get_chunks_dir, get_embeddings_dir,
 )
 
 
@@ -146,6 +147,54 @@ def save_index(
     }
 
 
+def save_index_for_year(
+    index: Any,
+    chunks: list[dict],
+    embeddings: np.ndarray,
+    year: int,
+) -> dict:
+    """Save FAISS index and metadata to a year-specific directory."""
+    year_emb_dir = get_embeddings_dir(year)
+    os.makedirs(year_emb_dir, exist_ok=True)
+
+    index_path = os.path.join(year_emb_dir, "faiss_index.bin")
+    faiss.write_index(index, index_path)
+
+    id_to_meta = {}
+    for i, chunk in enumerate(chunks):
+        id_to_meta[i] = {
+            "chunk_id": chunk["chunk_id"],
+            "company": chunk["company"],
+            "company_name": chunk["company_name"],
+            "year": chunk["year"],
+            "section": chunk["section"],
+            "chunk_index": chunk["chunk_index"],
+            "text": chunk["text"],
+        }
+
+    meta_path = os.path.join(year_emb_dir, "chunk_metadata.pkl")
+    with open(meta_path, "wb") as f:
+        pickle.dump(id_to_meta, f)
+
+    emb_path = os.path.join(year_emb_dir, "embeddings.npy")
+    np.save(emb_path, embeddings)
+
+    index_meta = {
+        "embedding_model": EMBEDDING_MODEL,
+        "embedding_dimension": EMBEDDING_DIMENSION,
+        "total_vectors": len(chunks),
+        "index_type": "IndexFlatIP",
+        "normalized": True,
+        "fiscal_year": year,
+    }
+    index_meta_path = os.path.join(year_emb_dir, "index_metadata.json")
+    with open(index_meta_path, "w") as f:
+        json.dump(index_meta, f, indent=2)
+
+    print(f"Saved year-specific index for FY{year}: {index.ntotal} vectors")
+    return {"index_path": index_path, "meta_path": meta_path, "emb_path": emb_path}
+
+
 def build_full_index() -> tuple:
     """
     Full pipeline: load chunks → generate embeddings → build index → save.
@@ -171,6 +220,31 @@ def build_full_index() -> tuple:
     print(f"Total vectors indexed: {index.ntotal}")
     print(f"Embedding model: {EMBEDDING_MODEL}")
     print(f"Index type: FAISS IndexFlatIP (cosine similarity)")
+
+    return index, chunks, embeddings
+
+
+def build_index_for_year(year: int) -> tuple:
+    """
+    Build FAISS index for a specific fiscal year.
+    Loads chunks from year-specific directory.
+    """
+    year_chunks_dir = get_chunks_dir(year)
+    chunks_path = os.path.join(year_chunks_dir, "all_chunks.json")
+    
+    if not os.path.exists(chunks_path):
+        print(f"No chunks found for FY{year} at {chunks_path}")
+        return None, [], np.empty((0, EMBEDDING_DIMENSION))
+    
+    chunks = load_chunks(chunks_path)
+    embeddings = generate_embeddings(chunks)
+    index = build_faiss_index(embeddings)
+    save_index_for_year(index, chunks, embeddings, year)
+
+    print(f"\n{'='*60}")
+    print(f"Embedding & Indexing Complete (FY{year})")
+    print(f"{'='*60}")
+    print(f"Total vectors indexed: {index.ntotal}")
 
     return index, chunks, embeddings
 

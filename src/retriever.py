@@ -16,6 +16,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from config import (
     EMBEDDINGS_DIR, EMBEDDING_MODEL,
     TOP_K, RETRIEVE_TOP_K, RERANK_ENABLED, RERANKER_MODEL,
+    get_embeddings_dir,
 )
 
 
@@ -28,17 +29,27 @@ class SemanticRetriever:
     - Metadata filtering (by company, year)
     """
 
-    def __init__(self, index_dir: str = None):
+    def __init__(self, index_dir: str = None, year: int = None):
         """
         Initialize the retriever by loading the FAISS index and metadata.
 
         Args:
             index_dir: Directory containing the FAISS index files
+            year: Fiscal year to load index for (uses year-specific dir)
         """
         if index_dir is None:
-            index_dir = EMBEDDINGS_DIR
+            if year is not None:
+                # Try year-specific directory first
+                year_dir = get_embeddings_dir(year)
+                if os.path.exists(os.path.join(year_dir, "faiss_index.bin")):
+                    index_dir = year_dir
+                else:
+                    index_dir = EMBEDDINGS_DIR
+            else:
+                index_dir = EMBEDDINGS_DIR
 
         self.index_dir = index_dir
+        self.year = year
         self.index = None
         self.chunk_metadata = None
         self.embedding_model = None

@@ -3,16 +3,17 @@ Company Risk Comparator
 
 Provides logic to load extracted risk profiles, aggregate data,
 and generate comparison matrices between companies.
+Supports multi-year analysis and cross-year comparisons.
 """
 
 import os
 import json
 import pandas as pd
-from typing import List, Dict
+from typing import List, Dict, Optional
 
 import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from config import COMPANIES, RISK_CATEGORIES
+from config import COMPANIES, RISK_CATEGORIES, get_risk_profiles_dir, AVAILABLE_YEARS
 
 # Severity mapping for numeric scoring
 SEVERITY_SCORE = {
@@ -26,15 +27,26 @@ SEVERITY_SCORE = {
 class RiskComparator:
     """Loads risk profiles and provides data structures for comparison."""
 
-    def __init__(self, profiles_dir: str = None):
-        if profiles_dir is None:
+    def __init__(self, profiles_dir: str = None, year: int = None):
+        """
+        Initialize the comparator.
+        
+        Args:
+            profiles_dir: Override path for profiles directory
+            year: Fiscal year to load profiles for
+        """
+        if profiles_dir is not None:
+            self.profiles_dir = profiles_dir
+        elif year is not None:
+            self.profiles_dir = get_risk_profiles_dir(year)
+        else:
+            # Default: try flat directory (backward compat)
             self.profiles_dir = os.path.join(
                 os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                 "data", "risk_profiles"
             )
-        else:
-            self.profiles_dir = profiles_dir
             
+        self.year = year
         self.profiles = []
         self._load_profiles()
 
@@ -164,8 +176,117 @@ class RiskComparator:
         
         return risks[:top_n]
 
+    # ==================================================================
+    # Multi-Year / Cross-Year Methods
+    # ==================================================================
+
+    @staticmethod
+    def get_available_years() -> List[int]:
+        """Return list of years that have risk profile data available."""
+        available = []
+        for year in AVAILABLE_YEARS:
+            year_dir = get_risk_profiles_dir(year)
+            combined_path = os.path.join(year_dir, "all_risk_profiles.json")
+            if os.path.exists(combined_path):
+                available.append(year)
+        
+        # Also check flat directory (legacy data)
+        flat_dir = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "data", "risk_profiles"
+        )
+        flat_combined = os.path.join(flat_dir, "all_risk_profiles.json")
+        if os.path.exists(flat_combined) and not available:
+            # Legacy data exists but no year-specific data — treat as 2025
+            available.append(2025)
+        
+        return sorted(available)
+
+    @staticmethod
+    def compare_years(ticker: str, year1: int, year2: int) -> pd.DataFrame:
+        """
+        Compare the same company across two different fiscal years.
+        Returns a DataFrame with risk categories and severity for each year.
+        """
+        comp1 = RiskComparator(year=year1)
+        comp2 = RiskComparator(year=year2)
+        
+        p1 = comp1.get_company_profile(ticker)
+        p2 = comp2.get_company_profile(ticker)
+        
+        if not p1 and not p2:
+            return pd.DataFrame()
+        
+        data = []
+        r1 = {r["risk_category"]: r for r in (p1 or {}).get("risk_assessments", [])}
+        r2 = {r["risk_category"]: r for r in (p2 or {}).get("risk_assessments", [])}
+        
+        for cat in RISK_CATEGORIES:
+            cat_name = cat["name"]
+            risk1 = r1.get(cat_name, {})
+            risk2 = r2.get(cat_name, {})
+            
+            sev1 = risk1.get("severity", "none").capitalize() if risk1.get("is_present") else "None"
+            sev2 = risk2.get("severity", "none").capitalize() if risk2.get("is_present") else "None"
+            
+            score1 = SEVERITY_SCORE.get(sev1.lower(), 0)
+            score2 = SEVERITY_SCORE.get(sev2.lower(), 0)
+            
+            change = score2 - score1
+            if change > 0:
+                trend = "📈 Increased"
+            elif change < 0:
+                trend = "📉 Decreased"
+            else:
+                trend = "➡️ Stable"
+            
+            data.append({
+                "Risk Category": cat_name,
+                f"FY{year1}": sev1,
+                f"FY{year2}": sev2,
+                "Trend": trend,
+                f"FY{year1} Explanation": risk1.get("explanation", "N/A"),
+                f"FY{year2} Explanation": risk2.get("explanation", "N/A"),
+            })
+        
+        return pd.DataFrame(data)
+
+    @staticmethod
+    def get_risk_trend(ticker: str, years: List[int] = None) -> pd.DataFrame:
+        """
+        Get risk severity trend for a company across multiple years.
+        Returns a DataFrame suitable for line chart plotting.
+        
+        Columns: Year, risk_category_1_score, risk_category_2_score, ...
+        """
+        if years is None:
+            years = RiskComparator.get_available_years()
+        
+        data = []
+        for year in sorted(years):
+            comp = RiskComparator(year=year)
+            profile = comp.get_company_profile(ticker)
+            
+            if not profile:
+                continue
+            
+            row = {"Year": year}
+            for risk in profile["risk_assessments"]:
+                cat = risk["risk_category"]
+                if risk["is_present"]:
+                    row[cat] = SEVERITY_SCORE.get(risk["severity"], 1)
+                else:
+                    row[cat] = 0
+            data.append(row)
+        
+        if not data:
+            return pd.DataFrame()
+        
+        return pd.DataFrame(data).set_index("Year")
+
 
 if __name__ == "__main__":
     # Quick test
     comp = RiskComparator()
     print("Available companies:", comp.get_available_companies())
+    print("Available years:", RiskComparator.get_available_years())

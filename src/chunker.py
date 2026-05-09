@@ -16,6 +16,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from config import (
     COMPANIES, EXTRACTED_DIR, CHUNKS_DIR,
     CHUNK_SIZE, CHUNK_OVERLAP, CHUNK_SEPARATORS,
+    get_chunks_dir, get_extracted_dir,
 )
 
 
@@ -233,6 +234,70 @@ def chunk_all_companies() -> list[dict]:
     print(f"Avg chunk length: {meta['avg_chunk_length']} chars")
     for ticker, count in meta["companies"].items():
         print(f"  {ticker}: {count} chunks")
+
+    return all_chunks
+
+
+def chunk_all_for_year(target_year: int) -> list[dict]:
+    """
+    Chunk all extracted Item 1A texts for a specific fiscal year.
+    Returns a combined list of all chunks with metadata.
+    """
+    all_chunks = []
+    year_ext_dir = get_extracted_dir(target_year)
+    year_chunks_dir = get_chunks_dir(target_year)
+    
+    # Load filing metadata for this year
+    filing_years = {}
+    meta_path = os.path.join(year_ext_dir, "extraction_metadata.json")
+    if os.path.exists(meta_path):
+        with open(meta_path, "r") as f:
+            meta = json.load(f)
+        for entry in meta:
+            filing_years[entry.get("ticker", "")] = str(target_year)
+
+    # Process each extracted file
+    for ticker, company_name in COMPANIES.items():
+        text_path = os.path.join(year_ext_dir, f"{ticker}_item1a.txt")
+        if not os.path.exists(text_path):
+            print(f"  SKIP: {text_path} not found")
+            continue
+
+        year = str(target_year)
+
+        print(f"\n{'='*60}")
+        print(f"Chunking: {company_name} ({ticker}) — FY{year}")
+        print(f"{'='*60}")
+
+        chunks = chunk_single_company(ticker, company_name, text_path, year)
+        all_chunks.extend(chunks)
+
+    # Save all chunks to year-specific dir
+    os.makedirs(year_chunks_dir, exist_ok=True)
+
+    chunks_path = os.path.join(year_chunks_dir, "all_chunks.json")
+    with open(chunks_path, "w", encoding="utf-8") as f:
+        json.dump(all_chunks, f, indent=2, ensure_ascii=False)
+
+    # Save per-company files
+    company_chunks = {}
+    for chunk in all_chunks:
+        ticker = chunk["company"]
+        if ticker not in company_chunks:
+            company_chunks[ticker] = []
+        company_chunks[ticker].append(chunk)
+
+    for ticker, chunks in company_chunks.items():
+        company_path = os.path.join(year_chunks_dir, f"{ticker}_chunks.json")
+        with open(company_path, "w", encoding="utf-8") as f:
+            json.dump(chunks, f, indent=2, ensure_ascii=False)
+
+    print(f"\n{'='*60}")
+    print(f"Chunking Summary (FY{target_year})")
+    print(f"{'='*60}")
+    print(f"Total chunks: {len(all_chunks)}")
+    for ticker, chunks in company_chunks.items():
+        print(f"  {ticker}: {len(chunks)} chunks")
 
     return all_chunks
 

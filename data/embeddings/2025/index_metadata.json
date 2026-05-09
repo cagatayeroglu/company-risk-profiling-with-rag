@@ -1,7 +1,8 @@
 {
   "embedding_model": "BAAI/bge-small-en-v1.5",
   "embedding_dimension": 384,
-  "total_vectors": 3322,
+  "total_vectors": 3990,
   "index_type": "IndexFlatIP",
-  "normalized": true
+  "normalized": true,
+  "fiscal_year": 2025
 }

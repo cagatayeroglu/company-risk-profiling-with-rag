@@ -19,7 +19,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from config import (
     COMPANIES, RISK_CATEGORIES, LLM_MODEL,
     LLM_MAX_NEW_TOKENS, LLM_TEMPERATURE, TOP_K,
-    EMBEDDINGS_DIR, USE_API, GROQ_MODEL
+    EMBEDDINGS_DIR, USE_API, GROQ_MODEL,
+    get_embeddings_dir, get_risk_profiles_dir,
 )
 from prompts.risk_extraction import build_prompt, RISK_PROFILE_JSON_SCHEMA
 
@@ -192,10 +193,10 @@ class RiskExtractor:
         self.model.eval()
         print(f"Model loaded successfully on {self.device}")
 
-    def load_retriever(self):
-        """Load the semantic retriever."""
+    def load_retriever(self, year: int = None):
+        """Load the semantic retriever, optionally for a specific year."""
         from src.retriever import SemanticRetriever
-        self.retriever = SemanticRetriever()
+        self.retriever = SemanticRetriever(year=year)
 
     def generate(self, system_prompt: str, user_prompt: str) -> str:
         """
@@ -334,16 +335,21 @@ class RiskExtractor:
 
         return profile
 
-    def extract_company_profile(self, ticker: str) -> dict:
+    def extract_company_profile(self, ticker: str, year: int = None) -> dict:
         """
         Extract risk profiles for all categories for a single company.
+
+        Args:
+            ticker: Company ticker symbol
+            year: Fiscal year (optional, added to profile metadata)
 
         Returns:
             Dict with company info and list of risk assessments
         """
         company_name = COMPANIES.get(ticker, ticker)
+        year_str = f" (FY{year})" if year else ""
         print(f"\n{'='*60}")
-        print(f"Extracting risk profile: {company_name} ({ticker})")
+        print(f"Extracting risk profile: {company_name} ({ticker}){year_str}")
         print(f"{'='*60}")
 
         risk_assessments = []
@@ -356,33 +362,43 @@ class RiskExtractor:
             present = "✓" if profile["is_present"] else "✗"
             print(f"    {present} {category['name']}: {severity} (conf: {conf:.2f})")
 
-        return {
+        result = {
             "company": ticker,
             "company_name": company_name,
             "risk_assessments": risk_assessments,
             "total_categories": len(RISK_CATEGORIES),
             "risks_found": sum(1 for r in risk_assessments if r["is_present"]),
         }
+        if year:
+            result["fiscal_year"] = year
+        return result
 
-    def extract_all_profiles(self, output_dir: str = None) -> list[dict]:
+    def extract_all_profiles(self, output_dir: str = None, year: int = None) -> list[dict]:
         """
         Extract risk profiles for all companies.
         Saves results to JSON files.
+
+        Args:
+            output_dir: Directory to save profiles (default: year-specific or data/risk_profiles)
+            year: Fiscal year to tag profiles with
 
         Returns:
             List of company profile dicts
         """
         if output_dir is None:
-            output_dir = os.path.join(
-                os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                "data", "risk_profiles",
-            )
+            if year:
+                output_dir = get_risk_profiles_dir(year)
+            else:
+                output_dir = os.path.join(
+                    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                    "data", "risk_profiles",
+                )
         os.makedirs(output_dir, exist_ok=True)
 
         all_profiles = []
 
         for ticker in COMPANIES:
-            company_profile = self.extract_company_profile(ticker)
+            company_profile = self.extract_company_profile(ticker, year=year)
             all_profiles.append(company_profile)
 
             # Save per-company profile
@@ -396,7 +412,7 @@ class RiskExtractor:
             json.dump(all_profiles, f, indent=2, ensure_ascii=False)
 
         print(f"\n{'='*60}")
-        print("Extraction Summary")
+        print(f"Extraction Summary{f' (FY{year})' if year else ''}")
         print(f"{'='*60}")
         for p in all_profiles:
             print(f"  {p['company']}: {p['risks_found']}/{p['total_categories']} risks found")

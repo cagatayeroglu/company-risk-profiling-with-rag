@@ -18,7 +18,7 @@ warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
 
 import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from config import COMPANIES, RAW_DIR, EXTRACTED_DIR
+from config import COMPANIES, RAW_DIR, EXTRACTED_DIR, get_raw_dir, get_extracted_dir
 
 
 def load_html(filepath: str) -> str:
@@ -132,7 +132,7 @@ def clean_extracted_text(text: str) -> str:
     return text.strip()
 
 
-def process_single_file(filepath: str, ticker: str, company_name: str) -> Optional[dict]:
+def process_single_file(filepath: str, ticker: str, company_name: str, year: int = None) -> Optional[dict]:
     """
     Process a single 10-K file: load HTML → convert to text → extract Item 1A → clean.
     Returns metadata dict with extraction results.
@@ -154,10 +154,14 @@ def process_single_file(filepath: str, ticker: str, company_name: str) -> Option
     item_1a_clean = clean_extracted_text(item_1a)
     print(f"  Item 1A length: {len(item_1a_clean):,} chars")
 
-    # Save extracted text
-    os.makedirs(EXTRACTED_DIR, exist_ok=True)
+    # Save extracted text to year-specific dir if year provided
+    if year:
+        out_dir = get_extracted_dir(year)
+    else:
+        out_dir = EXTRACTED_DIR
+    os.makedirs(out_dir, exist_ok=True)
     output_filename = f"{ticker}_item1a.txt"
-    output_path = os.path.join(EXTRACTED_DIR, output_filename)
+    output_path = os.path.join(out_dir, output_filename)
 
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(item_1a_clean)
@@ -172,6 +176,7 @@ def process_single_file(filepath: str, ticker: str, company_name: str) -> Option
         "full_text_length": len(full_text),
         "item_1a_length": len(item_1a_clean),
         "extraction_ratio": round(len(item_1a_clean) / len(full_text) * 100, 2),
+        "fiscal_year": year,
     }
 
 
@@ -215,6 +220,56 @@ def extract_all_item_1a() -> list:
 
     # Save extraction metadata
     extraction_meta_path = os.path.join(EXTRACTED_DIR, "extraction_metadata.json")
+    with open(extraction_meta_path, "w", encoding="utf-8") as f:
+        json.dump(results, f, indent=2)
+    print(f"\nExtraction metadata saved to: {extraction_meta_path}")
+
+    return results
+
+
+def extract_all_item_1a_for_year(target_year: int) -> list:
+    """
+    Process all 10-K files for a specific fiscal year and extract Item 1A sections.
+    """
+    results = []
+    year_raw_dir = get_raw_dir(target_year)
+    
+    # Load collection metadata for this year
+    meta_path = os.path.join(year_raw_dir, "collection_metadata.json")
+    if os.path.exists(meta_path):
+        with open(meta_path, "r") as f:
+            collection_meta = json.load(f)
+    else:
+        # Fallback: scan year raw directory for files
+        collection_meta = []
+        for ticker, company_name in COMPANIES.items():
+            pattern = os.path.join(year_raw_dir, f"{ticker}_10K_*")
+            files = glob.glob(pattern)
+            if files:
+                collection_meta.append({
+                    "ticker": ticker,
+                    "company_name": company_name,
+                    "local_path": files[0],
+                    "fiscal_year": target_year,
+                })
+
+    for filing in collection_meta:
+        ticker = filing["ticker"]
+        company_name = filing.get("company_name", COMPANIES.get(ticker, ticker))
+        filepath = filing["local_path"]
+
+        print(f"\n{'='*60}")
+        print(f"Extracting Item 1A: {company_name} ({ticker}) — FY{target_year}")
+        print(f"{'='*60}")
+
+        result = process_single_file(filepath, ticker, company_name, year=target_year)
+        if result:
+            results.append(result)
+
+    # Save extraction metadata in year dir
+    year_ext_dir = get_extracted_dir(target_year)
+    os.makedirs(year_ext_dir, exist_ok=True)
+    extraction_meta_path = os.path.join(year_ext_dir, "extraction_metadata.json")
     with open(extraction_meta_path, "w", encoding="utf-8") as f:
         json.dump(results, f, indent=2)
     print(f"\nExtraction metadata saved to: {extraction_meta_path}")
