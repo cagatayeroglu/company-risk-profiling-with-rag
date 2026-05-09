@@ -25,62 +25,101 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS for aesthetics
+# Custom CSS — Premium Design System
 st.markdown("""
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
+    /* === Global === */
+    html, body, [class*="css"] { font-family: 'Inter', sans-serif !important; }
+    .stApp { background: linear-gradient(135deg, #0f0c29 0%, #1a1a2e 50%, #16213e 100%); }
+
+    /* === Sidebar === */
+    section[data-testid="stSidebar"] {
+        background: linear-gradient(180deg, #1a1a2e 0%, #16213e 100%) !important;
+        border-right: 1px solid rgba(255,255,255,0.06);
+    }
+    section[data-testid="stSidebar"] * { color: #e0e0e0 !important; }
+    section[data-testid="stSidebar"] .stSelectbox label,
+    section[data-testid="stSidebar"] .stTextInput label { color: #a0a0c0 !important; font-weight: 500; }
+
+    /* === Headers === */
     .main-header {
-        font-size: 2.5rem;
-        font-weight: 700;
-        background: -webkit-linear-gradient(45deg, #2b5876, #4e4376);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        margin-bottom: 0px;
+        font-size: 2.6rem; font-weight: 800; letter-spacing: -0.5px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%);
+        -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+        margin-bottom: 0; padding-top: 0.5rem;
     }
-    .sub-header {
-        font-size: 1.2rem;
-        color: #666;
-        margin-bottom: 2rem;
-    }
-    .risk-high {
-        color: #d32f2f;
-        font-weight: bold;
-    }
-    .risk-medium {
-        color: #f57c00;
-        font-weight: bold;
-    }
-    .risk-low {
-        color: #388e3c;
-        font-weight: bold;
-    }
-    .evidence-box {
-        background-color: #f0f2f6;
-        color: #1a1c24; /* Fix for dark mode white text */
-        border-left: 4px solid #4e4376;
-        padding: 15px;
-        margin-bottom: 10px;
-        border-radius: 4px;
-        font-family: 'Courier New', Courier, monospace;
-        font-size: 0.9em;
-        white-space: pre-wrap;
-    }
-    .metric-card {
-        background-color: #f4f4f6;
-        border-radius: 8px;
-        padding: 20px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-        text-align: center;
-    }
+    .sub-header { font-size: 1.05rem; color: #8888aa; margin-bottom: 1.8rem; }
+
+    /* === Year Badge === */
     .year-badge {
-        display: inline-block;
-        background: linear-gradient(135deg, #4e4376, #2b5876);
-        color: white;
-        padding: 4px 12px;
-        border-radius: 12px;
-        font-size: 0.85em;
-        font-weight: 600;
-        margin-left: 8px;
+        display: inline-block; padding: 4px 14px; border-radius: 20px;
+        background: linear-gradient(135deg, #667eea, #764ba2);
+        color: #fff !important; font-size: 0.82em; font-weight: 700;
+        margin-left: 10px; letter-spacing: 0.5px;
+        box-shadow: 0 2px 12px rgba(102,126,234,0.3);
     }
+
+    /* === Risk Severity Pills === */
+    .risk-high {
+        color: #ff4757 !important; font-weight: 700;
+        text-shadow: 0 0 8px rgba(255,71,87,0.3);
+    }
+    .risk-medium { color: #ffa502 !important; font-weight: 700; }
+    .risk-low { color: #2ed573 !important; font-weight: 700; }
+
+    /* === Evidence Box === */
+    .evidence-box {
+        background: rgba(255,255,255,0.04);
+        border-left: 3px solid #667eea;
+        padding: 14px 16px; margin-bottom: 10px; border-radius: 6px;
+        font-family: 'JetBrains Mono', 'Courier New', monospace;
+        font-size: 0.85em; line-height: 1.6; white-space: pre-wrap;
+        color: #c8c8d8 !important;
+        transition: border-color 0.2s;
+    }
+    .evidence-box:hover { border-color: #764ba2; }
+
+    /* === Tabs === */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 4px; background: rgba(255,255,255,0.03);
+        border-radius: 12px; padding: 4px;
+    }
+    .stTabs [data-baseweb="tab"] {
+        border-radius: 8px; padding: 8px 16px; font-weight: 500;
+        color: #8888aa !important;
+    }
+    .stTabs [aria-selected="true"] {
+        background: linear-gradient(135deg, #667eea, #764ba2) !important;
+        color: #fff !important; font-weight: 600;
+        box-shadow: 0 2px 12px rgba(102,126,234,0.25);
+    }
+
+    /* === Metric Cards === */
+    .metric-card {
+        background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08);
+        border-radius: 12px; padding: 20px; text-align: center;
+        backdrop-filter: blur(10px);
+        transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .metric-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 25px rgba(102,126,234,0.15);
+    }
+
+    /* === Expanders === */
+    .streamlit-expanderHeader {
+        background: rgba(255,255,255,0.03) !important;
+        border-radius: 8px !important; font-weight: 500;
+    }
+
+    /* === Plotly charts dark bg === */
+    .js-plotly-plot .plotly .main-svg { background: transparent !important; }
+
+    /* === Scrollbar === */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #667eea40; border-radius: 3px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -175,10 +214,10 @@ if st.sidebar.button("Verileri Çek & Analiz Et"):
         st.sidebar.warning("Lütfen bir Ticker girin.")
 
 # ============================================================
-# Main Header
+# Main Header + KPI Cards
 # ============================================================
 st.markdown('<p class="main-header">Automated Risk Profiling Dashboard</p>', unsafe_allow_html=True)
-st.markdown(f'<p class="sub-header">Powered by Llama-3.1-8B (Groq), FAISS, and BAAI/bge-small-en-v1.5 <span class="year-badge">FY{selected_year}</span></p>', unsafe_allow_html=True)
+st.markdown(f'<p class="sub-header">Powered by Llama-3.1-8B (Groq) · FAISS Vector Search · BAAI/bge-small-en-v1.5 <span class="year-badge">FY{selected_year}</span></p>', unsafe_allow_html=True)
 
 # If no data for selected year, show empty state
 if not has_data:
@@ -197,7 +236,6 @@ if not has_data:
     Llama-3 ile risk analizi yapacaktır.
     """)
     
-    # Still show Year-over-Year tab if other years have data
     all_available_years = RiskComparator.get_available_years()
     if len(all_available_years) >= 2:
         st.markdown("---")
@@ -205,6 +243,46 @@ if not has_data:
         st.markdown(f"**Verisi olan yıllar:** {', '.join(f'FY{y}' for y in all_available_years)}")
     
     st.stop()
+
+# KPI Cards
+total_companies = len(available_companies)
+total_high = sum(
+    1 for p in comparator.profiles 
+    for r in p.get("risk_assessments", []) 
+    if r.get("is_present") and r.get("severity") == "high"
+)
+avg_conf = 0
+count = 0
+for p in comparator.profiles:
+    for r in p.get("risk_assessments", []):
+        if r.get("is_present"):
+            avg_conf += r.get("confidence", 0)
+            count += 1
+avg_conf = avg_conf / count if count else 0
+
+kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+with kpi1:
+    st.markdown(f"""<div class="metric-card">
+        <div style="font-size:2.2rem;font-weight:800;color:#667eea">{total_companies}</div>
+        <div style="font-size:0.85rem;color:#8888aa;margin-top:4px">Companies Analyzed</div>
+    </div>""", unsafe_allow_html=True)
+with kpi2:
+    st.markdown(f"""<div class="metric-card">
+        <div style="font-size:2.2rem;font-weight:800;color:#ff4757">{total_high}</div>
+        <div style="font-size:0.85rem;color:#8888aa;margin-top:4px">High-Severity Risks</div>
+    </div>""", unsafe_allow_html=True)
+with kpi3:
+    st.markdown(f"""<div class="metric-card">
+        <div style="font-size:2.2rem;font-weight:800;color:#2ed573">{len(RISK_CATEGORIES)}</div>
+        <div style="font-size:0.85rem;color:#8888aa;margin-top:4px">Risk Categories</div>
+    </div>""", unsafe_allow_html=True)
+with kpi4:
+    st.markdown(f"""<div class="metric-card">
+        <div style="font-size:2.2rem;font-weight:800;color:#ffa502">{avg_conf:.0%}</div>
+        <div style="font-size:0.85rem;color:#8888aa;margin-top:4px">Avg. Confidence</div>
+    </div>""", unsafe_allow_html=True)
+
+st.markdown("<br>", unsafe_allow_html=True)
 
 # Tabs
 tab1, tab2, tab3, tab4, tab5 = st.tabs([
@@ -226,21 +304,29 @@ with tab1:
     df_labels = comparator.get_severity_labels_matrix()
     
     if not df_scores.empty:
-        # Create a custom heatmap using Plotly
         fig = go.Figure(data=go.Heatmap(
             z=df_scores.values,
-            x=df_scores.columns,
+            x=[c.replace(" Risk", "") for c in df_scores.columns],
             y=df_scores.index,
             text=df_labels.values,
             texttemplate="%{text}",
-            colorscale=[[0, "#f8f9fa"], [0.33, "#e8f5e9"], [0.66, "#fff3e0"], [1.0, "#ffebee"]],
+            textfont=dict(size=12, color="#e0e0e0"),
+            colorscale=[
+                [0, "#1a1a2e"],
+                [0.33, "#1b4332"],
+                [0.66, "#7b2d26"],
+                [1.0, "#c0392b"]
+            ],
             showscale=False,
-            hoverinfo="x+y+text"
+            hovertemplate="<b>%{y}</b> — %{x}<br>Severity: %{text}<extra></extra>"
         ))
         
         fig.update_layout(
             height=500,
-            xaxis=dict(tickangle=-45),
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(0,0,0,0)",
+            font=dict(color="#c8c8d8"),
+            xaxis=dict(tickangle=-35, side="bottom"),
             margin=dict(t=30, l=100, r=20, b=100)
         )
         
@@ -428,15 +514,17 @@ with tab5:
                     title="Risk Severity Comparison by Category",
                     color_discrete_sequence=["#636EFA", "#EF553B", "#00CC96", "#AB63FA", "#FFA15A"],
                 )
-                fig_bar.update_traces(textposition="outside", textfont_size=11)
+                fig_bar.update_traces(textposition="outside", textfont=dict(size=11, color="#c8c8d8"))
                 fig_bar.update_layout(
                     height=480,
+                    paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                    font=dict(color="#c8c8d8"),
                     yaxis=dict(range=[0, 3.8], dtick=1,
                                tickvals=[0, 1, 2, 3],
-                               ticktext=["None", "Low", "Medium", "High"]),
+                               ticktext=["None", "Low", "Medium", "High"],
+                               gridcolor="rgba(255,255,255,0.05)"),
                     xaxis=dict(tickangle=-30),
-                    xaxis_title="",
-                    yaxis_title="Severity",
+                    xaxis_title="", yaxis_title="Severity",
                     legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
                 )
                 st.plotly_chart(fig_bar, use_container_width=True)
@@ -464,12 +552,16 @@ with tab5:
                 
                 fig_radar.update_layout(
                     polar=dict(
+                        bgcolor="rgba(0,0,0,0)",
                         radialaxis=dict(visible=True, range=[0, 3],
                                        tickvals=[0, 1, 2, 3],
-                                       ticktext=["None", "Low", "Med", "High"]),
+                                       ticktext=["None", "Low", "Med", "High"],
+                                       gridcolor="rgba(255,255,255,0.08)",
+                                       color="#8888aa"),
+                        angularaxis=dict(gridcolor="rgba(255,255,255,0.06)", color="#c8c8d8"),
                     ),
-                    height=500,
-                    showlegend=True,
+                    height=500, showlegend=True,
+                    paper_bgcolor="rgba(0,0,0,0)", font=dict(color="#c8c8d8"),
                 )
                 st.plotly_chart(fig_radar, use_container_width=True)
                 
