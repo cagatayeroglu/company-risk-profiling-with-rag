@@ -193,7 +193,7 @@ with tab2:
             st.markdown(f"#### {profile['company_name']} ({selected_ticker})")
             st.markdown(f"**Total Risks Identified:** {profile['risks_found']} out of {profile['total_categories']} categories.")
             
-        top_risks = comparator.get_top_risks_for_company(selected_ticker, top_n=5)
+        top_risks = comparator.get_top_risks_for_company(selected_ticker, top_n=8)
         
         for i, risk in enumerate(top_risks):
             sev_class = f"risk-{risk['severity'].lower()}"
