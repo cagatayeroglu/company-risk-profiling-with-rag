@@ -29,3 +29,5 @@ numpy>=1.24.0
 # Utilities
 tqdm>=4.66.0
 python-dotenv>=1.0.0
+groq>=0.4.2
+sec-edgar-downloader>=3.0.0

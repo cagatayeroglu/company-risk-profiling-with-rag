@@ -104,10 +104,30 @@ st.sidebar.title("Navigation")
 st.sidebar.markdown("Explore automated risk profiles extracted from Form 10-K filings using Multi-Document RAG.")
 st.sidebar.markdown("---")
 
-st.sidebar.markdown("**Available Companies:**")
+st.sidebar.markdown("**Mevcut Şirketler:**")
 for ticker in available_companies:
     name = COMPANIES.get(ticker, ticker)
     st.sidebar.markdown(f"- **{ticker}**: {name}")
+
+st.sidebar.markdown("---")
+st.sidebar.markdown("### ⚡ Canlı Hisse Analizi")
+new_ticker = st.sidebar.text_input("Ticker Girin (Örn: NFLX, GOOGL)", max_chars=5)
+if st.sidebar.button("Verileri Çek & Analiz Et"):
+    if new_ticker and new_ticker.upper() not in available_companies:
+        from src.live_pipeline import run_live_analysis
+        status_box = st.sidebar.empty()
+        with st.spinner("İşlem sürüyor, Llama-3 çalışıyor..."):
+            success, msg = run_live_analysis(new_ticker, status_placeholder=status_box)
+        if success:
+            st.sidebar.success(f"✅ {new_ticker.upper()} başarıyla eklendi!")
+            st.cache_data.clear()
+            st.rerun()
+        else:
+            st.sidebar.error(msg)
+    elif new_ticker.upper() in available_companies:
+        st.sidebar.warning(f"{new_ticker.upper()} zaten sistemde var!")
+    else:
+        st.sidebar.warning("Lütfen bir Ticker girin.")
 
 # ============================================================
 # Main Header
@@ -189,8 +209,8 @@ with tab2:
                         if chunk_id_match:
                             chunk_id = chunk_id_match.group(1)
                             full_text = chunk_lookup.get(chunk_id, snippet)
-                            with st.expander(f"📄 View Original 10-K Chunk: {chunk_id}", expanded=False):
-                                st.markdown(f"<div class='evidence-box'>{full_text}</div>", unsafe_allow_html=True)
+                            st.markdown(f"**📄 Original 10-K Chunk: {chunk_id}**")
+                            st.markdown(f"<div class='evidence-box'>{full_text}</div>", unsafe_allow_html=True)
                         else:
                             st.markdown(f"<div class='evidence-box'>\"{snippet}\"</div>", unsafe_allow_html=True)
 

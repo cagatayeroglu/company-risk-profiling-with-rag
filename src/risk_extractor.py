@@ -9,13 +9,17 @@ import os
 import re
 import json
 from typing import Any
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from config import (
     COMPANIES, RISK_CATEGORIES, LLM_MODEL,
     LLM_MAX_NEW_TOKENS, LLM_TEMPERATURE, TOP_K,
-    EMBEDDINGS_DIR,
+    EMBEDDINGS_DIR, USE_API, GROQ_MODEL
 )
 from prompts.risk_extraction import build_prompt, RISK_PROFILE_JSON_SCHEMA
 
@@ -113,22 +117,34 @@ class RiskExtractor:
     Supports Qwen2.5-3B-Instruct via HuggingFace transformers.
     """
 
-    def __init__(self, model_name: str = None, device: str = "auto"):
+    def __init__(self, model_name: str = None, device: str = "auto", use_api: bool = USE_API):
         """
         Initialize the risk extractor.
 
         Args:
             model_name: HuggingFace model name (default from config)
             device: Device to load model on ("auto", "cpu", "cuda", "mps")
+            use_api: If True, uses the Groq API instead of local model
         """
+        self.use_api = use_api
         self.model_name = model_name or LLM_MODEL
         self.device = device
         self.model = None
         self.tokenizer = None
         self.retriever = None
+        self.groq_client = None
 
     def load_model(self):
-        """Load the LLM model and tokenizer."""
+        """Load the LLM model (or initialize API client)."""
+        if self.use_api:
+            from groq import Groq
+            api_key = os.environ.get("GROQ_API_KEY")
+            if not api_key or api_key == "your_groq_api_key_here":
+                raise ValueError("GROQ_API_KEY is missing or invalid in .env file. Please add a valid key.")
+            self.groq_client = Groq(api_key=api_key)
+            print(f"Initialized Groq API client with model: {GROQ_MODEL}")
+            return
+
         from transformers import AutoModelForCausalLM, AutoTokenizer  # type: ignore[import-not-found]
         import torch  # type: ignore[import-not-found]
 
@@ -192,6 +208,26 @@ class RiskExtractor:
         Returns:
             Generated text response
         """
+        if self.use_api:
+            if self.groq_client is None:
+                raise RuntimeError("Groq client not initialized. Call load_model() first.")
+                
+            try:
+                chat_completion = self.groq_client.chat.completions.create(
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
+                    ],
+                    model=GROQ_MODEL,
+                    temperature=LLM_TEMPERATURE,
+                    max_tokens=LLM_MAX_NEW_TOKENS,
+                    response_format={"type": "json_object"}
+                )
+                return chat_completion.choices[0].message.content
+            except Exception as e:
+                print(f"API Error: {str(e)}")
+                return "{}"
+                
         import torch  # type: ignore[import-not-found]
 
         if self.model is None:

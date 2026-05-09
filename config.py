@@ -144,6 +144,9 @@ RERANKER_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
 # ============================================================
 # LLM Configuration
 # ============================================================
+USE_API = True            # Set to False to use local Qwen model, True for Groq API
+GROQ_MODEL = "llama-3.1-8b-instant"
+
 LLM_MODEL = "Qwen/Qwen2.5-3B-Instruct"
 LLM_MAX_NEW_TOKENS = 512
 LLM_TEMPERATURE = 0.1     # low temperature for structured output
