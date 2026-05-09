@@ -5,6 +5,8 @@ Uses Llama-3.1 via Groq API (or local Qwen2.5) to extract structured risk profil
 from retrieved evidence chunks. Supports both local and Colab execution.
 """
 
+from __future__ import annotations
+
 import os
 import re
 import json

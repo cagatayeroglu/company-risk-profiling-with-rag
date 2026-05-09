@@ -5,6 +5,8 @@ Splits extracted Item 1A Risk Factors text into overlapping chunks
 and attaches metadata (company, year, section, chunk_id).
 """
 
+from __future__ import annotations
+
 import os
 import re
 import json

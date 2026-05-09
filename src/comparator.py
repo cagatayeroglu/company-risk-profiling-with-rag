@@ -6,6 +6,7 @@ and generate comparison matrices between companies.
 Supports multi-year analysis and cross-year comparisons.
 """
 
+from __future__ import annotations
 import os
 import json
 import pandas as pd
@@ -71,7 +72,7 @@ class RiskComparator:
         """Return list of tickers with available profiles."""
         return [p["company"] for p in self.profiles]
 
-    def get_company_profile(self, ticker: str) -> Dict | None:
+    def get_company_profile(self, ticker: str) -> Optional[Dict]:
         """Get the full profile for a specific company."""
         for p in self.profiles:
             if p["company"] == ticker:

@@ -5,6 +5,8 @@ Generates embeddings using BAAI/bge-small-en-v1.5 and builds
 a FAISS index for semantic evidence retrieval.
 """
 
+from __future__ import annotations
+
 import os
 import json
 import pickle
