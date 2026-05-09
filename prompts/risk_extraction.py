@@ -62,12 +62,12 @@ RULES:
 4. If the evidence does not clearly mention the risk category, set is_present to false and severity to "low".
 5. Evidence snippets must be direct quotes from the provided text, not paraphrased.
 6. Keep explanations concise: 1-3 sentences maximum.
-7. Confidence should reflect how clearly the evidence supports your assessment:
-   - 0.9-1.0: Very clear, explicit risk discussion in evidence
-   - 0.7-0.8: Moderate evidence, some interpretation needed
-   - 0.5-0.6: Weak or indirect evidence
-   - 0.3-0.4: Minimal evidence, mostly inferred
-   - 0.0-0.2: No relevant evidence found"""
+7. Confidence should reflect how clearly the evidence supports your assessment. Provide a precise, granular 2-decimal float (e.g., 0.94, 0.87, 0.73) rather than rounding to nearest tenths:
+   - Near 0.95+: Very clear, explicit risk discussion in evidence
+   - Near 0.80+: Moderate evidence, some interpretation needed
+   - Near 0.60+: Weak or indirect evidence
+   - Near 0.40+: Minimal evidence, mostly inferred
+   - Near 0.10+: No relevant evidence found"""
 
 # ============================================================
 # User Prompt Template
