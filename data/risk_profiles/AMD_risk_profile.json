@@ -1,0 +1,109 @@
+{
+  "company": "AMD",
+  "company_name": "Advanced Micro Devices, Inc.",
+  "risk_assessments": [
+    {
+      "company": "AMD",
+      "risk_category": "Supply Chain Risk",
+      "is_present": true,
+      "severity": "high",
+      "explanation": "AMD discusses risks related to dependence on a limited number of suppliers, third-party manufacturers, natural disasters, and geopolitical conflicts that could disrupt its supply chain and operations.",
+      "evidence_snippets": [
+        "[Chunk 1] (ID: AMD_2026_item1a_0111)",
+        "[Chunk 2] (ID: AMD_2026_item1a_0094)",
+        "[Chunk 3] (ID: AMD_2026_item1a_0207)"
+      ],
+      "confidence": 0.9
+    },
+    {
+      "company": "AMD",
+      "risk_category": "Regulatory / Legal Risk",
+      "is_present": true,
+      "severity": "medium",
+      "explanation": "AMD discusses government regulations and trade policies that could limit product exports and impact its business, indicating regulatory/legal risks.",
+      "evidence_snippets": [
+        "[Chunk 1] (ID: AMD_2026_item1a_0215)",
+        "[Chunk 2] (ID: AMD_2026_item1a_0009)",
+        "[Chunk 3] (ID: AMD_2026_item1a_0232)"
+      ],
+      "confidence": 0.9
+    },
+    {
+      "company": "AMD",
+      "risk_category": "Competition Risk",
+      "is_present": true,
+      "severity": "medium",
+      "explanation": "AMD discusses competition risks such as intense competition driven by technological change and frequent product launches from both established and new competitors, which could lead to losing market share.",
+      "evidence_snippets": [
+        "[Chunk 3](ID: AMD_2026_item1a_0018)",
+        "[Chunk 4](ID: AMD_2026_item1a_0389)"
+      ],
+      "confidence": 0.7
+    },
+    {
+      "company": "AMD",
+      "risk_category": "Cybersecurity Risk",
+      "is_present": true,
+      "severity": "high",
+      "explanation": "AMD explicitly discusses significant cybersecurity risks, including unauthorized access and breaches, which could materially adversely affect its financial condition and competitive position.",
+      "evidence_snippets": [
+        "[Chunk 1] (ID: AMD_2026_item1a_0138)",
+        "[Chunk 2] (ID: AMD_2026_item1a_0133)",
+        "[Chunk 3] (ID: AMD_2026_item1a_0139)"
+      ],
+      "confidence": 0.9
+    },
+    {
+      "company": "AMD",
+      "risk_category": "Demand / Market Risk",
+      "is_present": true,
+      "severity": "medium",
+      "explanation": "AMD discusses the volatility of the cryptocurrency mining market and product transition risks, indicating potential material adverse effects.",
+      "evidence_snippets": [
+        "[Chunk 1] (ID: AMD_2026_item1a_0038)",
+        "[Chunk 2] (ID: AMD_2026_item1a_0055)"
+      ],
+      "confidence": 0.9
+    },
+    {
+      "company": "AMD",
+      "risk_category": "Macroeconomic Risk",
+      "is_present": true,
+      "severity": "medium",
+      "explanation": "AMD discusses risks related to volatile global economic conditions, including downturns or recessions, and geopolitical events that could impact its business.",
+      "evidence_snippets": [
+        "[Chunk 1] (ID: AMD_2026_item1a_0361)",
+        "[Chunk 2] (ID: AMD_2026_item1a_0068)",
+        "[Chunk 3] (ID: AMD_2026_item1a_0365)"
+      ],
+      "confidence": 0.9
+    },
+    {
+      "company": "AMD",
+      "risk_category": "Operational Risk",
+      "is_present": true,
+      "severity": "medium",
+      "explanation": "AMD discusses risks related to employee retention due to changes in immigration law and regulations, and potential impacts on attracting and retaining key employees.",
+      "evidence_snippets": [
+        "[Chunk 1] (ID: AMD_2026_item1a_0384)",
+        "[Chunk 4] (ID: AMD_2026_item1a_0385)"
+      ],
+      "confidence": 0.7
+    },
+    {
+      "company": "AMD",
+      "risk_category": "IP / Technology Risk",
+      "is_present": true,
+      "severity": "medium",
+      "explanation": "AMD discusses risks related to inadequate protection of its technology and intellectual property, including potential for third-party infringement and misappropriation, which could lead to competitive disadvantage and significant expenses.",
+      "evidence_snippets": [
+        "[Chunk 1] (ID: AMD_2026_item1a_0003)",
+        "[Chunk 2] (ID: AMD_2026_item1a_0077)",
+        "[Chunk 3] (ID: AMD_2026_item1a_0074)"
+      ],
+      "confidence": 0.9
+    }
+  ],
+  "total_categories": 8,
+  "risks_found": 8
+}

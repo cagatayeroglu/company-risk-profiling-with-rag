@@ -1,0 +1,7 @@
+{
+  "embedding_model": "BAAI/bge-small-en-v1.5",
+  "embedding_dimension": 384,
+  "total_vectors": 1730,
+  "index_type": "IndexFlatIP",
+  "normalized": true
+}

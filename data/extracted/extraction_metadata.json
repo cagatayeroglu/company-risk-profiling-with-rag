@@ -1,0 +1,56 @@
+[
+  {
+    "ticker": "AAPL",
+    "company_name": "Apple Inc.",
+    "source_file": "/Users/erayakalin/Desktop/CS455-PROJECT/data/raw/AAPL_10K_2025-10-31.htm",
+    "output_file": "/Users/erayakalin/Desktop/CS455-PROJECT/data/extracted/AAPL_item1a.txt",
+    "full_text_length": 220666,
+    "item_1a_length": 68047,
+    "extraction_ratio": 30.84
+  },
+  {
+    "ticker": "MSFT",
+    "company_name": "Microsoft Corporation",
+    "source_file": "/Users/erayakalin/Desktop/CS455-PROJECT/data/raw/MSFT_10K_2025-07-30.htm",
+    "output_file": "/Users/erayakalin/Desktop/CS455-PROJECT/data/extracted/MSFT_item1a.txt",
+    "full_text_length": 347437,
+    "item_1a_length": 120632,
+    "extraction_ratio": 34.72
+  },
+  {
+    "ticker": "TSLA",
+    "company_name": "Tesla, Inc.",
+    "source_file": "/Users/erayakalin/Desktop/CS455-PROJECT/data/raw/TSLA_10K_2026-01-29.htm",
+    "output_file": "/Users/erayakalin/Desktop/CS455-PROJECT/data/extracted/TSLA_item1a.txt",
+    "full_text_length": 429673,
+    "item_1a_length": 83439,
+    "extraction_ratio": 19.42
+  },
+  {
+    "ticker": "NVDA",
+    "company_name": "NVIDIA Corporation",
+    "source_file": "/Users/erayakalin/Desktop/CS455-PROJECT/data/raw/NVDA_10K_2026-02-25.htm",
+    "output_file": "/Users/erayakalin/Desktop/CS455-PROJECT/data/extracted/NVDA_item1a.txt",
+    "full_text_length": 360462,
+    "item_1a_length": 121618,
+    "extraction_ratio": 33.74
+  },
+  {
+    "ticker": "AMZN",
+    "company_name": "Amazon.com, Inc.",
+    "source_file": "/Users/erayakalin/Desktop/CS455-PROJECT/data/raw/AMZN_10K_2026-02-06.htm",
+    "output_file": "/Users/erayakalin/Desktop/CS455-PROJECT/data/extracted/AMZN_item1a.txt",
+    "full_text_length": 312366,
+    "item_1a_length": 60535,
+    "extraction_ratio": 19.38
+  },
+  {
+    "ticker": "AMD",
+    "company_name": "Advanced Micro Devices, Inc.",
+    "source_file": "/Users/erayakalin/Desktop/CS455-PROJECT/data/raw/AMD_10K_2026-02-04.htm",
+    "output_file": "/Users/erayakalin/Desktop/CS455-PROJECT/data/extracted/AMD_item1a.txt",
+    "full_text_length": 425346,
+    "item_1a_length": 131760,
+    "extraction_ratio": 30.98
+  }
+]
