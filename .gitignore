@@ -3,3 +3,6 @@ __pycache__/
 *.pyc
 .DS_Store
 colab_project.zip
+
+data/
+.DS_Store

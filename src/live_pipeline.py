@@ -84,6 +84,15 @@ def run_live_analysis(ticker: str, year: int = None, status_placeholder=None):
             old_chunks = []
             old_embeddings = np.empty((0, 384), dtype=np.float32)
             
+        # Drop any previously-indexed chunks for THIS ticker so re-running a
+        # ticker replaces its data instead of duplicating it in the index.
+        # (embeddings.npy is row-aligned with all_chunks.json order.)
+        if old_chunks:
+            keep = [c.get("company") != ticker for c in old_chunks]
+            old_chunks = [c for c, k in zip(old_chunks, keep) if k]
+            if len(old_embeddings) == len(keep):
+                old_embeddings = old_embeddings[np.array(keep, dtype=bool)]
+
         new_embeddings = generate_embeddings(new_chunks)
         all_embeddings = np.vstack([old_embeddings, new_embeddings])
         all_chunks = old_chunks + new_chunks

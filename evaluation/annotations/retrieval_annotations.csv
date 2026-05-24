@@ -1,5 +1,0 @@
-query_id,query,company_filter,relevant_chunk_ids
-1,supply chain disruption risk,AAPL,"AAPL_2025_item1a_0042, AAPL_2025_item1a_0043, AAPL_2025_item1a_0044"
-2,cybersecurity data breach,MSFT,"MSFT_2025_item1a_0102"
-3,government regulation compliance,AMZN,"AMZN_2025_item1a_0088, AMZN_2025_item1a_0089"
-4,competition and market share,NVDA,"NVDA_2025_item1a_0012, NVDA_2025_item1a_0015"

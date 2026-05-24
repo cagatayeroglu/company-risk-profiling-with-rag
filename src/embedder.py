@@ -49,8 +49,8 @@ def generate_embeddings(chunks: list[dict], batch_size: int = 64) -> np.ndarray:
     Returns:
         numpy array of shape (n_chunks, embedding_dim)
     """
-    print(f"Loading embedding model: {EMBEDDING_MODEL}")
-    model = SentenceTransformer(EMBEDDING_MODEL)
+    from src.model_cache import get_embedding_model
+    model = get_embedding_model(EMBEDDING_MODEL)
 
     texts = [chunk["text"] for chunk in chunks]
     print(f"Generating embeddings for {len(texts)} chunks (batch_size={batch_size})...")

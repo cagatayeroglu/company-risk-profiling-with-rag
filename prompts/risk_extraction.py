@@ -75,7 +75,14 @@ Think step-by-step about how strong the evidence actually is:
 - 0.05-0.29: No meaningful evidence for this risk category
 
 CRITICAL — SEVERITY DIFFERENTIATION:
-You must carefully distinguish between severity levels. Most risks should NOT be "high" — reserve "high" and "critical" for truly exceptional risks with clear financial materiality."""
+SEC 10-K risk factors are written defensively: almost EVERY risk factor claims it "could have a material adverse effect on our business, financial condition and results of operations." Because this phrase is universal boilerplate, it is NOT by itself evidence of high severity — ignore it when scoring.
+
+Default to "medium" for ordinary, well-discussed risks. Escalate to "high" or "critical" ONLY when the evidence contains at least one concrete ESCALATOR beyond boilerplate:
+- a quantified financial impact (a specific dollar or percentage figure), OR
+- a named, active legal/regulatory action (a specific lawsuit, agency, or settlement), OR
+- a past incident that ACTUALLY occurred (not a hypothetical "could"), OR
+- explicit existential / enterprise-threatening language.
+If NONE of these escalators are present, the severity ceiling is "medium" — do not exceed it no matter how serious the boilerplate sounds."""
 
 # ============================================================
 # User Prompt Template
@@ -100,32 +107,59 @@ Based ONLY on the evidence above, produce a JSON risk assessment with this exact
     "confidence": 0.0 to 1.0
 }}
 
-SEVERITY SCALE (use the full range — do NOT default to "high"):
-- "critical": Company describes this as an existential or enterprise-threatening risk with potential for massive financial loss, regulatory shutdown, or fundamental business model disruption. Must include language like "material adverse effect", quantified losses, or active ongoing crises.
-- "high": Company explicitly warns of significant, material risks with concrete examples of past incidents or high-probability future impacts. Evidence includes specific dollar amounts, lawsuits, or regulatory actions.
-- "medium": Company acknowledges and discusses the risk meaningfully, describes mitigation strategies, but the risk is typical for the industry and well-managed. Standard risk factor language without exceptional urgency.
-- "low": Risk is briefly mentioned in a general or boilerplate manner. No specific incidents, no quantified impact, listed among many generic risks without emphasis.
-- "negligible": Risk is not meaningfully discussed. Only indirect or tangential references, or no relevant evidence at all.
+SEVERITY SCALE (an ESCALATOR = a quantified figure, a named active lawsuit/regulator, an incident that actually occurred, or existential language):
+- "critical": An escalator describing an existential / enterprise-threatening situation — an ongoing crisis, a quantified massive loss, or a regulatory action that could shut down a core business line.
+- "high": Contains a clear escalator — e.g. specific dollar/percentage impact, a named active legal/regulatory proceeding, or a past incident that already occurred.
+- "medium": A risk that is MEANINGFULLY DISCUSSED — the filing describes how it arises, gives concrete examples, or outlines mitigation — but with no escalator. This is the typical, well-managed risk factor.
+- "low": The category is only mentioned in passing — named or listed among many risks with little to no specific discussion, mechanism, or detail. If the evidence is thin/sparse and merely references the topic, prefer "low" over "medium".
+- "negligible": Not meaningfully discussed; only tangential references or no relevant evidence.
 
-IMPORTANT: Most well-managed companies have MEDIUM-level risks. Only assign "high" or "critical" if the evidence clearly justifies it with specific incidents, quantified impacts, or urgent language. Standard boilerplate risk factors = "medium" at most.
+DISTINCTION — low vs medium: "medium" requires actual discussion/detail; "low" is a bare mention. Do not inflate a brief, generic reference to "medium".
+
+REMEMBER: "could have a material adverse effect" is boilerplate present in nearly every risk factor — it NEVER justifies "high" on its own. Without a concrete escalator, the answer is "medium" at most.
 
 Output ONLY the JSON object, nothing else:"""
 
 
-def format_evidence_chunks(chunks: list[dict]) -> str:
+# ============================================================
+# Few-shot Examples (anchor the medium-vs-high distinction)
+# ============================================================
+# Generic, non-company-specific examples so the model learns the SCORING RULE
+# rather than memorizing any filing. Kept as a plain string (no .format) so the
+# JSON braces below do not interfere with template substitution.
+
+FEW_SHOT_EXAMPLES = """Scoring examples (note: boilerplate "could ... material adverse effect" stays "medium"; a concrete escalator earns "high"):
+
+EX1 (boilerplate, no escalator) Evidence: "We depend on a limited number of suppliers; if they limit supply or raise prices it could have a material adverse effect on our business." -> {"severity": "medium", "is_present": true} (hypothetical, no figures/named party/incident)
+
+EX2 (escalator present) Evidence: "In fiscal 2024 we recorded a $450M charge from an ongoing EU antitrust investigation; we have paid $120M in fines and face up to $1.2B more." -> {"severity": "high", "is_present": true} (quantified impact + active proceeding)
+
+EX3 (bare mention) Evidence (for Macroeconomic Risk): "Among other factors, our results may be affected by changes in tax laws, interest rates, and general economic conditions." -> {"severity": "low", "is_present": true} (listed in passing among many factors, no real discussion)
+
+EX4 (off-topic) Evidence (for Cybersecurity Risk): "Our equipment requires periodic maintenance." -> {"severity": "negligible", "is_present": false} (no relevant evidence)
+
+Now complete the REAL task below using the same rules."""
+
+
+def format_evidence_chunks(chunks: list[dict], char_limit: int = None) -> str:
     """
     Format retrieved evidence chunks into a string for the prompt.
 
     Args:
         chunks: List of chunk dicts with 'text', 'company', 'chunk_id' fields
+        char_limit: If set, truncate each chunk's text to this many characters
+            (keeps requests within the LLM token budget).
 
     Returns:
         Formatted evidence string
     """
     evidence_parts = []
     for i, chunk in enumerate(chunks, 1):
+        text = chunk["text"]
+        if char_limit and len(text) > char_limit:
+            text = text[:char_limit].rstrip() + " …"
         evidence_parts.append(
-            f"[Chunk {i}] (ID: {chunk.get('chunk_id', 'unknown')})\n{chunk['text']}"
+            f"[Chunk {i}] (ID: {chunk.get('chunk_id', 'unknown')})\n{text}"
         )
     return "\n\n".join(evidence_parts)
 
@@ -136,6 +170,7 @@ def build_prompt(
     risk_category: str,
     risk_description: str,
     evidence_chunks: list[dict],
+    evidence_char_limit: int = None,
 ) -> tuple[str, str]:
     """
     Build the complete system + user prompt for risk extraction.
@@ -146,18 +181,22 @@ def build_prompt(
         risk_category: Name of the risk category
         risk_description: Description of the risk category
         evidence_chunks: List of retrieved evidence chunk dicts
+        evidence_char_limit: Optional per-chunk character cap (token budget).
 
     Returns:
         Tuple of (system_prompt, user_prompt)
     """
-    evidence_text = format_evidence_chunks(evidence_chunks)
+    evidence_text = format_evidence_chunks(evidence_chunks, char_limit=evidence_char_limit)
 
-    user_prompt = USER_PROMPT_TEMPLATE.format(
+    task_prompt = USER_PROMPT_TEMPLATE.format(
         company_name=company_name,
         ticker=ticker,
         risk_category=risk_category,
         risk_description=risk_description,
         evidence_text=evidence_text,
     )
+
+    # Prepend few-shot examples to anchor the severity scoring rule.
+    user_prompt = f"{FEW_SHOT_EXAMPLES}\n\n{task_prompt}"
 
     return SYSTEM_PROMPT, user_prompt

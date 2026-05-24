@@ -17,93 +17,187 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from config import (
     COMPANIES, EXTRACTED_DIR, CHUNKS_DIR,
-    CHUNK_SIZE, CHUNK_OVERLAP, CHUNK_SEPARATORS,
+    CHUNK_SIZE, CHUNK_OVERLAP, CHUNK_TOKENIZER,
+    CHUNK_HEADING_AWARE, CHUNK_HEADING_MAX_WORDS,
     get_chunks_dir, get_extracted_dir,
 )
+
+# ------------------------------------------------------------------
+# Token counting (tiktoken). Falls back to a char-based estimate if
+# tiktoken is unavailable, so the pipeline never hard-fails.
+# ------------------------------------------------------------------
+_ENCODER = None
+
+
+def _get_encoder():
+    global _ENCODER
+    if _ENCODER is None:
+        try:
+            import tiktoken
+            _ENCODER = tiktoken.get_encoding(CHUNK_TOKENIZER)
+        except Exception:  # pragma: no cover - defensive fallback
+            _ENCODER = False  # sentinel: tiktoken unavailable
+    return _ENCODER
+
+
+def count_tokens(text: str) -> int:
+    """Count tokens in `text`. Falls back to ~4 chars/token if needed."""
+    enc = _get_encoder()
+    if enc is False:
+        return max(1, len(text) // 4)
+    return len(enc.encode(text))
+
+
+def _split_sentences(text: str) -> list[str]:
+    """Naive sentence splitter on terminal punctuation."""
+    parts = re.split(r"(?<=[.!?])\s+", text)
+    return [s.strip() for s in parts if s.strip()]
+
+
+def _hard_token_split(text: str, chunk_size: int) -> list[str]:
+    """Last-resort split of an oversized unit by raw token windows."""
+    enc = _get_encoder()
+    if enc is False:
+        # char-based approximation (~4 chars/token)
+        step = chunk_size * 4
+        return [text[i:i + step].strip() for i in range(0, len(text), step)]
+    toks = enc.encode(text)
+    return [
+        enc.decode(toks[i:i + chunk_size]).strip()
+        for i in range(0, len(toks), chunk_size)
+    ]
+
+
+def _looks_like_heading(paragraph: str) -> bool:
+    """
+    Heuristic: a short paragraph that is NOT terminated with sentence
+    punctuation is likely a risk-factor heading/sub-heading. Plain-text
+    SEC extracts lose bold formatting, so this is a best-effort signal.
+    """
+    p = paragraph.strip()
+    if not p or "\n" in p:
+        return False
+    if len(p.split()) > CHUNK_HEADING_MAX_WORDS:
+        return False
+    return not p.rstrip().endswith((".", "!", "?", ":", ";", ","))
+
+
+def _make_semantic_units(text: str, chunk_size: int) -> list[str]:
+    """
+    Break text into paragraph-level units, never exceeding chunk_size.
+    Oversized paragraphs are split into sentence groups (then token windows).
+    """
+    paragraphs = [p.strip() for p in re.split(r"\n\s*\n", text) if p.strip()]
+    units: list[str] = []
+    for para in paragraphs:
+        if count_tokens(para) <= chunk_size:
+            units.append(para)
+            continue
+        # Paragraph too big: pack sentences greedily.
+        current = ""
+        for sent in _split_sentences(para):
+            candidate = f"{current} {sent}".strip() if current else sent
+            if count_tokens(candidate) <= chunk_size:
+                current = candidate
+            else:
+                if current:
+                    units.append(current)
+                if count_tokens(sent) > chunk_size:
+                    units.extend(_hard_token_split(sent, chunk_size))
+                    current = ""
+                else:
+                    current = sent
+        if current:
+            units.append(current)
+    return units
+
+
+def _tail_tokens(text: str, overlap_tokens: int) -> str:
+    """
+    Return the trailing `overlap_tokens` tokens of `text` as a string.
+
+    Used to carry a small, bounded slice of the previous chunk into the next
+    one. (The old unit-based approach pulled an entire ~chunk_size unit as
+    "overlap", which doubled chunk sizes.)
+    """
+    if overlap_tokens <= 0 or not text:
+        return ""
+    enc = _get_encoder()
+    if enc is False:
+        approx = overlap_tokens * 4  # ~4 chars/token fallback
+        return text[-approx:] if len(text) > approx else text
+    toks = enc.encode(text)
+    if len(toks) <= overlap_tokens:
+        return text
+    return enc.decode(toks[-overlap_tokens:])
 
 
 def split_text_recursive(
     text: str,
     chunk_size: int = CHUNK_SIZE,
     chunk_overlap: int = CHUNK_OVERLAP,
-    separators: list = None,
+    separators: list = None,  # kept for backward compatibility (unused)
 ) -> list[str]:
     """
-    Recursively split text into chunks using a hierarchy of separators.
-    Similar to LangChain's RecursiveCharacterTextSplitter but standalone.
+    Token-aware, paragraph/heading-aware chunker.
+
+    - Sizes are measured in tokens (tiktoken), not characters.
+    - Whole paragraphs are kept intact and packed greedily up to
+      `chunk_size` tokens, preserving semantic boundaries.
+    - Consecutive chunks share `chunk_overlap` tokens of trailing context.
+    - When CHUNK_HEADING_AWARE is on, a heading-like paragraph forces a
+      fresh chunk so a single risk factor stays together.
 
     Args:
         text: The text to split
-        chunk_size: Maximum characters per chunk
-        chunk_overlap: Number of overlapping characters between chunks
-        separators: List of separators to try, in order of preference
+        chunk_size: Maximum tokens per chunk
+        chunk_overlap: Token overlap between consecutive chunks
+        separators: Ignored; retained so existing callers don't break.
 
     Returns:
         List of text chunks
     """
-    if separators is None:
-        separators = CHUNK_SEPARATORS
+    if not text or not text.strip():
+        return []
+    if count_tokens(text) <= chunk_size:
+        return [text.strip()]
 
-    if len(text) <= chunk_size:
-        return [text.strip()] if text.strip() else []
+    units = _make_semantic_units(text, chunk_size)
 
-    # Find the best separator for this level
-    chosen_sep = separators[-1]  # fallback to character-level
-    for sep in separators:
-        if sep in text:
-            chosen_sep = sep
-            break
+    chunks: list[str] = []
+    current_units: list[str] = []
+    current_tokens = 0
 
-    # Split by the chosen separator
-    parts = text.split(chosen_sep)
+    for unit in units:
+        unit_tokens = count_tokens(unit)
+        force_boundary = (
+            CHUNK_HEADING_AWARE
+            and current_units
+            and _looks_like_heading(unit)
+        )
 
-    chunks = []
-    current_chunk = ""
+        if force_boundary:
+            chunks.append("\n\n".join(current_units).strip())
+            # Start a clean section at the heading (no overlap across boundary).
+            current_units = [unit]
+            current_tokens = unit_tokens
+            continue
 
-    for part in parts:
-        candidate = current_chunk + chosen_sep + part if current_chunk else part
-
-        if len(candidate) <= chunk_size:
-            current_chunk = candidate
+        if current_units and current_tokens + unit_tokens > chunk_size:
+            chunk_text = "\n\n".join(current_units).strip()
+            chunks.append(chunk_text)
+            # Carry only a small token-bounded tail into the next chunk.
+            overlap_text = _tail_tokens(chunk_text, chunk_overlap)
+            current_units = ([overlap_text] if overlap_text else []) + [unit]
+            current_tokens = sum(count_tokens(u) for u in current_units)
         else:
-            # Save current chunk if it has content
-            if current_chunk.strip():
-                chunks.append(current_chunk.strip())
+            current_units.append(unit)
+            current_tokens += unit_tokens
 
-            # If this part alone is too large, recurse with finer separators
-            if len(part) > chunk_size and len(separators) > 1:
-                sub_chunks = split_text_recursive(
-                    part, chunk_size, chunk_overlap, separators[1:]
-                )
-                chunks.extend(sub_chunks)
-                current_chunk = ""
-            else:
-                current_chunk = part
+    if current_units:
+        chunks.append("\n\n".join(current_units).strip())
 
-    # Don't forget the last chunk
-    if current_chunk.strip():
-        chunks.append(current_chunk.strip())
-
-    # Add overlap between consecutive chunks
-    if chunk_overlap > 0 and len(chunks) > 1:
-        overlapping_chunks = []
-        for i, chunk in enumerate(chunks):
-            if i == 0:
-                overlapping_chunks.append(chunk)
-            else:
-                # Take the last `chunk_overlap` characters from previous chunk
-                prev = chunks[i - 1]
-                overlap_text = prev[-chunk_overlap:] if len(prev) > chunk_overlap else prev
-                # Find a clean break point in the overlap
-                clean_break = overlap_text.find(". ")
-                if clean_break != -1:
-                    overlap_text = overlap_text[clean_break + 2:]
-                overlapping_chunks.append(overlap_text + " " + chunk)
-            overlapping_chunks[-1] = overlapping_chunks[-1].strip()
-
-        return overlapping_chunks
-
-    return chunks
+    return [c for c in chunks if c]
 
 
 def extract_year_from_filename(filename: str) -> str:

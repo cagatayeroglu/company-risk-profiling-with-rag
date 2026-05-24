@@ -45,7 +45,10 @@ def get_risk_profiles_dir(year: int) -> str:
 # ============================================================
 COMPANIES = {
     "AAPL": "Apple Inc.",
-    "MSFT": "Microsoft Corporation",
+    # MSFT temporarily excluded: its 10-K body has no matchable "Item 1A /
+    # Risk Factors" heading (only a TOC entry), so extraction needs a separate
+    # structure-based approach. Re-enable once extractor handles it.
+    # "MSFT": "Microsoft Corporation",
     "TSLA": "Tesla, Inc.",
     "NVDA": "NVIDIA Corporation",
     "AMZN": "Amazon.com, Inc.",
@@ -69,9 +72,9 @@ RISK_CATEGORIES = [
         "name": "Supply Chain Risk",
         "description": "Risks from supply chain disruptions, single-source supplier dependencies, raw material shortages, manufacturing concentration, and logistics bottlenecks. Look for mentions of specific suppliers, geographic concentration, component shortages, or inventory issues.",
         "query_templates": [
-            "supply chain disruption single source supplier",
-            "component shortage manufacturing dependency",
-            "logistics bottleneck inventory risk",
+            "What supply chain disruptions or single-source supplier dependencies does the company face?",
+            "How could component shortages or manufacturing concentration affect the company?",
+            "What logistics, inventory, or raw material risks does the company disclose?",
         ],
     },
     {
@@ -79,9 +82,9 @@ RISK_CATEGORIES = [
         "name": "Regulatory / Legal Risk",
         "description": "Risks from government regulations, active legal proceedings, regulatory investigations, compliance failures, fines, and policy changes. Look for mentions of specific lawsuits, settlement amounts, regulatory agencies (FTC, SEC, DOJ), or new legislation.",
         "query_templates": [
-            "government regulation compliance enforcement",
-            "legal proceedings litigation settlement",
-            "regulatory investigation penalty fine",
+            "What government regulations or compliance requirements pose risks to the company?",
+            "What legal proceedings, lawsuits, or settlements is the company exposed to?",
+            "What regulatory investigations, fines, or penalties could affect the company?",
         ],
     },
     {
@@ -89,9 +92,9 @@ RISK_CATEGORIES = [
         "name": "Competition Risk",
         "description": "Risks from market competition leading to pricing pressure, loss of market share, and competitive disadvantage. Look for mentions of specific competitors, margin compression, customer switching, or market entry barriers eroding.",
         "query_templates": [
-            "competitive pressure market share loss",
-            "pricing competition margin compression",
-            "new market entrants competitive disadvantage",
+            "How does competition threaten the company's market share?",
+            "What competitive pricing pressures could compress the company's margins?",
+            "What risks come from new market entrants or competing products?",
         ],
     },
     {
@@ -99,9 +102,9 @@ RISK_CATEGORIES = [
         "name": "Cybersecurity Risk",
         "description": "Risks from data breaches, cyberattacks, ransomware, system intrusions, and privacy violations. Look for mentions of past security incidents, breach notification costs, data protection regulations (GDPR, CCPA), or specific threat vectors.",
         "query_templates": [
-            "data breach cybersecurity incident",
-            "ransomware cyberattack system intrusion",
-            "privacy violation data protection GDPR",
+            "What cybersecurity, data breach, or cyberattack risks does the company face?",
+            "How could a security incident or ransomware attack affect the company?",
+            "What data privacy or data protection risks does the company disclose?",
         ],
     },
     {
@@ -109,9 +112,9 @@ RISK_CATEGORIES = [
         "name": "Demand / Market Risk",
         "description": "Risks from demand uncertainty, shifting consumer preferences, market saturation, product adoption failure, and revenue concentration. Look for customer concentration percentages, seasonal dependency, or declining product lines.",
         "query_templates": [
-            "demand uncertainty consumer preference shift",
-            "market saturation revenue concentration",
-            "product adoption failure seasonal dependency",
+            "What risks come from changes in customer demand or consumer preferences?",
+            "How could market saturation or customer revenue concentration affect the company?",
+            "What risks relate to product adoption, seasonality, or declining demand?",
         ],
     },
     {
@@ -119,9 +122,9 @@ RISK_CATEGORIES = [
         "name": "Macroeconomic Risk",
         "description": "Risks from economic downturns, inflation, interest rate changes, currency fluctuations, and geopolitical instability. Look for quantified foreign exchange exposure, specific country risks, tariff impacts, or recession scenario analysis.",
         "query_templates": [
-            "economic downturn recession GDP impact",
-            "inflation interest rate currency fluctuation",
-            "geopolitical instability tariff trade war",
+            "How could an economic downturn or recession affect the company?",
+            "What risks come from inflation, interest rate changes, or currency fluctuations?",
+            "How do geopolitical instability, tariffs, or trade tensions pose risks to the company?",
         ],
     },
     {
@@ -129,9 +132,9 @@ RISK_CATEGORIES = [
         "name": "Operational Risk",
         "description": "Risks from internal process failures, system outages, workforce challenges, quality control issues, and business continuity threats. Look for mentions of specific outage incidents, employee turnover rates, safety violations, or operational KPI impacts.",
         "query_templates": [
-            "system outage operational failure",
-            "workforce turnover talent retention",
-            "quality control safety business continuity",
+            "What operational risks such as system outages or process failures does the company face?",
+            "How could workforce turnover or talent retention problems affect the company?",
+            "What risks relate to quality control, safety, or business continuity?",
         ],
     },
     {
@@ -139,9 +142,9 @@ RISK_CATEGORIES = [
         "name": "IP / Technology Risk",
         "description": "Risks from intellectual property disputes, patent infringement claims, technology obsolescence, R&D failures, and AI/ML governance risks. Look for specific patent cases, IP litigation costs, technology migration challenges, or R&D write-offs.",
         "query_templates": [
-            "patent infringement intellectual property dispute",
-            "technology obsolescence platform migration",
-            "R&D failure AI governance risk",
+            "What intellectual property or patent infringement risks does the company face?",
+            "How could technology obsolescence or failed innovation affect the company?",
+            "What risks relate to research and development, AI governance, or platform changes?",
         ],
     },
 ]
@@ -149,9 +152,17 @@ RISK_CATEGORIES = [
 # ============================================================
 # Chunking Configuration
 # ============================================================
-CHUNK_SIZE = 512          # tokens per chunk
-CHUNK_OVERLAP = 100       # overlap tokens between consecutive chunks
-CHUNK_SEPARATORS = ["\n\n", "\n", ". ", " ", ""]
+# NOTE: sizes are now measured in *tokens* (tiktoken / cl100k_base),
+# not characters. The chunker packs whole paragraphs (semantic units)
+# up to CHUNK_SIZE tokens with CHUNK_OVERLAP tokens of trailing context.
+CHUNK_SIZE = 400          # max tokens per chunk
+CHUNK_OVERLAP = 80        # overlap tokens between consecutive chunks
+CHUNK_TOKENIZER = "cl100k_base"  # tiktoken encoding used for token counting
+CHUNK_SEPARATORS = ["\n\n", "\n", ". ", " ", ""]  # fallback separators
+# Treat short, non-terminated paragraphs as risk-factor headings and start
+# a fresh chunk at them so a single risk factor is not split across chunks.
+CHUNK_HEADING_AWARE = True
+CHUNK_HEADING_MAX_WORDS = 14
 
 # ============================================================
 # Embedding Configuration
@@ -167,6 +178,37 @@ RETRIEVE_TOP_K = 20       # initial retrieval pool for reranking
 RERANK_ENABLED = True     # enable cross-encoder reranking
 RERANKER_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
 
+# --- Hybrid retrieval (BM25 lexical + dense, fused via RRF) -------------
+# Disabled by default: on the FY2025 labeled eval, dense-only consistently beat
+# hybrid (MRR/Recall/nDCG ~0.83 vs ~0.79) — natural-language queries + strong
+# dense embeddings + cross-encoder rerank leave BM25 adding only noise.
+# Flip to True to re-enable; evaluator's ablation builds BM25 regardless.
+HYBRID_ENABLED = False    # fuse BM25 and dense results before reranking
+BM25_TOP_K = 20           # lexical candidate pool size
+RRF_K = 60                # Reciprocal Rank Fusion constant (standard default)
+
+# --- Relevance gating ---------------------------------------------------
+# A chunk's `relevance` is sigmoid(cross-encoder rerank score) in [0, 1].
+# Cross-encoder scores are NOT comparable across risk categories (broad
+# categories like macro/competition score far lower than focused ones like
+# cybersecurity), so we gate RELATIVELY: keep chunks whose relevance is at
+# least RELEVANCE_KEEP_RATIO of the best chunk for that category. This makes
+# the number of returned chunks vary by evidence strength instead of a fixed
+# TOP_K, without zeroing-out genuinely-present-but-diffuse risks.
+RELEVANCE_KEEP_RATIO = 0.5
+# Absolute noise floor: if even the best chunk is below this, the category
+# has no real evidence and returns nothing.
+RELEVANCE_FLOOR = 0.05
+# If fewer than this many chunks survive gating, the risk is treated as not
+# present (LLM is skipped, severity = negligible).
+MIN_RELEVANT_CHUNKS = 1
+# Severity guardrail: if even the BEST retrieved chunk for a category is weak
+# (relevance below this), the evidence is too thin to justify medium/high — the
+# severity is capped at "low". This only fires on genuinely weak evidence; a
+# single strong chunk (e.g. relevance 0.9) is never capped, so the LLM keeps
+# full freedom on real evidence.
+LOW_EVIDENCE_RELEVANCE = 0.30
+
 # ============================================================
 # LLM Configuration
 # ============================================================
@@ -176,6 +218,14 @@ GROQ_MODEL = "llama-3.1-8b-instant"
 LLM_MODEL = "Qwen/Qwen2.5-3B-Instruct"
 LLM_MAX_NEW_TOKENS = 512
 LLM_TEMPERATURE = 0.1     # low temperature for structured output
+
+# --- Request-size control (keep within Groq free-tier 6000 TPM limit) ---
+# Chunks are ~400-480 tokens each, so all TOP_K can be sent in full: 5 chunks
+# (~2.3k tokens) + few-shot + system + output ≈ 3.9k tokens, safely < 6000.
+# The char cap is only a safety net for rare oversized chunks, not routine
+# truncation (a normal chunk is ~1900 chars, below the cap).
+LLM_EVIDENCE_CHUNKS = 5        # evidence chunks included in the prompt
+LLM_EVIDENCE_CHAR_LIMIT = 2200 # per-chunk safety cap (~550 tokens)
 
 # ============================================================
 # Risk Profile JSON Schema

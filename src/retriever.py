@@ -6,6 +6,7 @@ semantic search, with optional cross-encoder reranking.
 """
 
 import os
+import re
 import pickle
 import numpy as np
 import faiss  # type: ignore[import-not-found]
@@ -16,8 +17,39 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from config import (
     EMBEDDINGS_DIR, EMBEDDING_MODEL,
     TOP_K, RETRIEVE_TOP_K, RERANK_ENABLED, RERANKER_MODEL,
+    HYBRID_ENABLED, BM25_TOP_K, RRF_K,
+    RELEVANCE_KEEP_RATIO, RELEVANCE_FLOOR,
     get_embeddings_dir,
 )
+
+_TOKEN_RE = re.compile(r"[a-z0-9]+")
+
+# Function/question words carry no topical signal but, in natural-language
+# query templates ("What does the company face?"), they let BM25 match
+# off-topic chunks and inject noise into the fusion. Dropping them sharpens
+# BM25 toward content terms.
+_STOPWORDS = frozenset("""
+a an the this that these those of to in on at by for from with without within
+and or but nor so as is are was were be been being am do does did doing done
+have has had having will would shall should can could may might must
+what which who whom whose when where why how
+we our us you your they their them it its he she his her i me my
+not no any some all each other such than then there here about into over under
+company companies business operations operating results financial condition
+risk risks could would may also include including related due
+""".split())
+
+
+def _tokenize(text: str) -> list[str]:
+    """Lowercase content-word tokenizer for BM25 lexical matching.
+    Drops stopwords and single characters so BM25 keys on topical terms."""
+    return [t for t in _TOKEN_RE.findall(text.lower())
+            if len(t) > 1 and t not in _STOPWORDS]
+
+
+def _sigmoid(x: float) -> float:
+    """Map a cross-encoder logit to a [0, 1] relevance probability."""
+    return float(1.0 / (1.0 + np.exp(-x)))
 
 
 class SemanticRetriever:
@@ -54,8 +86,12 @@ class SemanticRetriever:
         self.chunk_metadata = None
         self.embedding_model = None
         self.reranker_model = None
+        self.bm25 = None
+        self._bm25_ids = []  # FAISS idx aligned with BM25 corpus order
 
         self._load_index()
+        if HYBRID_ENABLED:
+            self._build_bm25()
 
     def _load_index(self):
         """Load the FAISS index and chunk metadata."""
@@ -71,18 +107,70 @@ class SemanticRetriever:
         print(f"Loaded metadata for {len(self.chunk_metadata)} chunks")
 
     def _get_embedding_model(self):
-        """Lazy-load the embedding model."""
+        """Lazy-load the embedding model (process-wide cached singleton)."""
         if self.embedding_model is None:
-            self.embedding_model = SentenceTransformer(EMBEDDING_MODEL)
-            print(f"Loaded embedding model: {EMBEDDING_MODEL}")
+            from src.model_cache import get_embedding_model
+            self.embedding_model = get_embedding_model(EMBEDDING_MODEL)
         return self.embedding_model
 
     def _get_reranker_model(self):
-        """Lazy-load the cross-encoder reranker."""
+        """Lazy-load the cross-encoder reranker (process-wide cached singleton)."""
         if self.reranker_model is None and RERANK_ENABLED:
-            self.reranker_model = CrossEncoder(RERANKER_MODEL)
-            print(f"Loaded reranker: {RERANKER_MODEL}")
+            from src.model_cache import get_reranker_model
+            self.reranker_model = get_reranker_model(RERANKER_MODEL)
         return self.reranker_model
+
+    def _build_bm25(self):
+        """Build an in-memory BM25 index over the chunk corpus."""
+        try:
+            from rank_bm25 import BM25Okapi
+        except ImportError:
+            print("WARNING: rank_bm25 not installed; falling back to dense-only.")
+            self.bm25 = None
+            return
+
+        self._bm25_ids = list(self.chunk_metadata.keys())
+        corpus = [
+            _tokenize(self.chunk_metadata[i].get("text", ""))
+            for i in self._bm25_ids
+        ]
+        self.bm25 = BM25Okapi(corpus)
+        print(f"Built BM25 index over {len(corpus)} chunks")
+
+    def _dense_search(self, query: str, k: int) -> list[tuple]:
+        """Return [(faiss_idx, score), ...] from the dense FAISS index."""
+        query_embedding = self.embed_query(query)
+        scores, indices = self.index.search(query_embedding, k)
+        return [
+            (int(idx), float(score))
+            for score, idx in zip(scores[0], indices[0])
+            if idx != -1
+        ]
+
+    def _bm25_search(self, query: str, k: int) -> list[tuple]:
+        """Return [(faiss_idx, score), ...] from the BM25 lexical index."""
+        if self.bm25 is None:
+            return []
+        scores = self.bm25.get_scores(_tokenize(query))
+        top = np.argsort(scores)[::-1][:k]
+        return [
+            (self._bm25_ids[j], float(scores[j]))
+            for j in top
+            if scores[j] > 0
+        ]
+
+    @staticmethod
+    def _rrf_fuse(rankings: list[list[tuple]], rrf_k: int) -> list[int]:
+        """
+        Reciprocal Rank Fusion: combine multiple ranked lists into one
+        ordering. Each list is [(idx, score), ...] sorted best-first.
+        Returns idx values ordered by fused score (descending).
+        """
+        fused: dict[int, float] = {}
+        for ranking in rankings:
+            for rank, (idx, _score) in enumerate(ranking):
+                fused[idx] = fused.get(idx, 0.0) + 1.0 / (rrf_k + rank + 1)
+        return [idx for idx, _ in sorted(fused.items(), key=lambda x: x[1], reverse=True)]
 
     def embed_query(self, query: str) -> np.ndarray:
         """
@@ -127,30 +215,34 @@ class SemanticRetriever:
         if rerank is None:
             rerank = RERANK_ENABLED
 
-        # Determine how many to initially retrieve
-        initial_k = RETRIEVE_TOP_K if rerank else top_k
+        # BM25 presence is the single source of truth: production builds it only
+        # when HYBRID_ENABLED, while the evaluator can force-build it to ablate.
+        use_hybrid = self.bm25 is not None
 
-        # If we're filtering, retrieve more to account for filtered-out results
+        # Determine how many candidates to pull before reranking/truncation.
+        initial_k = RETRIEVE_TOP_K if rerank else top_k
         if company_filter or year_filter:
+            # Retrieve more to survive metadata filtering.
             initial_k = min(initial_k * 3, self.index.ntotal)
 
-        # Embed the query
-        query_embedding = self.embed_query(query)
+        # 1) Gather candidates (dense, plus lexical when hybrid is on).
+        dense_hits = self._dense_search(query, initial_k)
+        dense_scores = {idx: score for idx, score in dense_hits}
 
-        # FAISS search
-        scores, indices = self.index.search(query_embedding, initial_k)
-        scores = scores[0]
-        indices = indices[0]
+        if use_hybrid:
+            bm25_k = max(BM25_TOP_K, initial_k)
+            bm25_hits = self._bm25_search(query, bm25_k)
+            bm25_scores = {idx: score for idx, score in bm25_hits}
+            ordered_idx = self._rrf_fuse([dense_hits, bm25_hits], RRF_K)
+        else:
+            bm25_scores = {}
+            ordered_idx = [idx for idx, _ in dense_hits]
 
-        # Build results with metadata
+        # 2) Build results with metadata + filters, preserving fused order.
         results = []
-        for score, idx in zip(scores, indices):
-            if idx == -1:  # FAISS returns -1 for not-found
-                continue
-
+        for idx in ordered_idx:
             meta = self.chunk_metadata.get(int(idx), {})
 
-            # Apply filters
             if company_filter and meta.get("company") != company_filter:
                 continue
             if year_filter and meta.get("year") != year_filter:
@@ -164,15 +256,25 @@ class SemanticRetriever:
                 "section": meta.get("section", ""),
                 "chunk_index": meta.get("chunk_index", -1),
                 "text": meta.get("text", ""),
-                "faiss_score": float(score),
+                "faiss_score": dense_scores.get(idx, 0.0),
+                "bm25_score": bm25_scores.get(idx, 0.0),
+                "retrieval_mode": "hybrid" if use_hybrid else "dense",
                 "faiss_rank": len(results) + 1,
             })
 
-        # Rerank if enabled
+        # 3) Rerank (cross-encoder) or truncate.
         if rerank and results:
             results = self._rerank(query, results, top_k)
         else:
             results = results[:top_k]
+
+        # 4) Attach a normalized [0, 1] relevance score for gating downstream.
+        for r in results:
+            if "rerank_score" in r:
+                r["relevance"] = _sigmoid(r["rerank_score"])
+            else:
+                # Cosine similarity from normalized embeddings is already ~[0, 1].
+                r["relevance"] = max(0.0, min(1.0, r.get("faiss_score", 0.0)))
 
         return results
 
@@ -208,21 +310,38 @@ class SemanticRetriever:
         risk_category: dict,
         company: str = None,
         top_k: int = None,
+        keep_ratio: float = None,
+        floor: float = None,
     ) -> list[dict]:
         """
         Retrieve evidence for a specific risk category using multiple query templates.
         Aggregates and deduplicates results across all queries.
 
+        Gating is RELATIVE to the best chunk for this category (cross-encoder
+        scores are not comparable across categories): keep chunks whose
+        relevance is >= keep_ratio * best_relevance, provided the best chunk
+        clears the absolute `floor`. Returns a variable number of chunks
+        (0..top_k) based on evidence strength.
+
         Args:
             risk_category: Risk category dict from config (with query_templates)
             company: Optional company ticker filter
-            top_k: Number of final results to return
+            top_k: Maximum number of final results to return
+            keep_ratio: Fraction of the best relevance a chunk must reach.
+                Defaults to RELEVANCE_KEEP_RATIO. Pass 0.0 to disable gating.
+            floor: Absolute noise floor for the best chunk. Defaults to
+                RELEVANCE_FLOOR.
 
         Returns:
-            Deduplicated and ranked list of evidence chunks
+            Deduplicated, relevance-gated, ranked list of evidence chunks
+            (may be empty when the category has no real evidence).
         """
         if top_k is None:
             top_k = TOP_K
+        if keep_ratio is None:
+            keep_ratio = RELEVANCE_KEEP_RATIO
+        if floor is None:
+            floor = RELEVANCE_FLOOR
 
         all_results = {}
 
@@ -246,12 +365,25 @@ class SemanticRetriever:
                     if r[score_key] > all_results[chunk_id].get(score_key, 0):
                         all_results[chunk_id][score_key] = r[score_key]
 
-        # Sort by query_matches (more = better), then by score
+        if not all_results:
+            return []
+
+        # Relative gating: drop chunks far below this category's best chunk.
+        best_rel = max(r.get("relevance", 0.0) for r in all_results.values())
+        if best_rel < floor:
+            return []  # no real evidence for this category
+        min_keep = keep_ratio * best_rel
+        gated = [
+            r for r in all_results.values()
+            if r.get("relevance", 0.0) >= min_keep
+        ]
+
+        # Sort by query_matches (more = better), then by relevance
         sorted_results = sorted(
-            all_results.values(),
+            gated,
             key=lambda x: (
                 x.get("query_matches", 1),
-                x.get("rerank_score", x.get("faiss_score", 0)),
+                x.get("relevance", x.get("rerank_score", 0)),
             ),
             reverse=True,
         )

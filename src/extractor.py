@@ -51,58 +51,73 @@ def html_to_text(html_content: str) -> str:
     return "\n".join(lines)
 
 
-def extract_item_1a(text: str) -> Optional[str]:
+def _is_standalone_heading(text: str, m: re.Match) -> bool:
     """
-    Extract the Item 1A Risk Factors section from the full 10-K text.
-
-    Strategy:
-    1. Find the start of "Item 1A" section
-    2. Find the start of the next section ("Item 1B" or "Item 2")
-    3. Extract everything in between
+    True if the "Item 1A ... Risk Factors" match sits on its own line — i.e. it
+    is a real section heading, not an inline cross-reference embedded in a
+    sentence (e.g. NVIDIA's '...Item 1A. Risk Factors," our Consolidated...').
     """
-    # Patterns for the start of Item 1A
-    start_patterns = [
-        r"(?i)item\s+1a[\.\s\-–—:]*\s*risk\s+factors",
-        r"(?i)ITEM\s+1A[\.\s\-–—:]*\s*RISK\s+FACTORS",
-        r"(?i)item\s+1a\.\s+risk\s+factors",
-    ]
+    # Preceding non-space char must be a newline (or start of document).
+    pre = text[:m.start()].rstrip(" \t")
+    if pre and not pre.endswith("\n"):
+        return False
+    # Following content (after optional trailing spaces / a trailing period)
+    # must begin a new line.
+    tail = text[m.end():].lstrip(" \t")
+    if tail.startswith("."):
+        tail = tail[1:].lstrip(" \t")
+    return tail.startswith("\n") or tail == ""
 
-    # Patterns for the end of Item 1A (start of next section)
+
+def _find_section_end(text: str, after_pos: int) -> int:
+    """Position of the next section heading (Item 1B / Item 2) after `after_pos`."""
     end_patterns = [
         r"(?i)item\s+1b[\.\s\-–—:]*\s*unresolved\s+staff\s+comments",
         r"(?i)item\s+1b[\.\s\-–—:]",
         r"(?i)item\s+2[\.\s\-–—:]*\s*properties",
         r"(?i)item\s+2[\.\s\-–—:]",
     ]
+    sub = text[after_pos:]
+    end = len(text)
+    for pattern in end_patterns:
+        m = re.search(pattern, sub)
+        if m:
+            end = min(end, after_pos + m.start())
+    return end
 
-    # Find the start position
-    start_pos = None
-    for pattern in start_patterns:
-        matches = list(re.finditer(pattern, text))
-        if matches:
-            # Use the LAST match — the first might be from the table of contents
-            start_pos = matches[-1].start()
-            break
 
-    if start_pos is None:
+def extract_item_1a(text: str) -> Optional[str]:
+    """
+    Extract the Item 1A Risk Factors section from the full 10-K text.
+
+    Strategy:
+    1. Collect every "Item 1A ... Risk Factors" candidate.
+    2. Keep only standalone headings (on their own line), discarding inline
+       cross-references embedded in sentences (e.g. NVIDIA's / AMD's MD&A
+       references), which a naive last-match heuristic wrongly selects.
+    3. Among the real headings, pick the one whose span to the next section
+       (Item 1B / Item 2) is LONGEST — the actual body, not a table-of-contents
+       entry (which is immediately followed by "Item 1B").
+    """
+    start_pattern = r"(?i)item\s+1a[\.\s\-–—:]*\s*risk\s+factors"
+
+    candidates = sorted(re.finditer(start_pattern, text), key=lambda m: m.start())
+    if not candidates:
         return None
 
-    # Find the end position (search only after start_pos)
-    end_pos = len(text)
-    search_text = text[start_pos + 50:]  # Skip past the "Item 1A" heading itself
+    headings = [m for m in candidates if _is_standalone_heading(text, m)]
+    # Fallback to all candidates if line-anchoring filtered everything out.
+    pool = headings or candidates
 
-    for pattern in end_patterns:
-        matches = list(re.finditer(pattern, search_text))
-        if matches:
-            # Use the first match after Item 1A
-            candidate_end = start_pos + 50 + matches[0].start()
-            if candidate_end < end_pos:
-                end_pos = candidate_end
-                break
+    best = None  # (span_length, start_pos, end_pos)
+    for m in pool:
+        end_pos = _find_section_end(text, m.end() + 10)
+        span = end_pos - m.start()
+        if best is None or span > best[0]:
+            best = (span, m.start(), end_pos)
 
-    extracted = text[start_pos:end_pos].strip()
-
-    return extracted if len(extracted) > 200 else None  # Sanity check: too short = failed
+    extracted = text[best[1]:best[2]].strip()
+    return extracted if len(extracted) > 200 else None  # too short = failed
 
 
 def clean_extracted_text(text: str) -> str:

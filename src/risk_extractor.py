@@ -21,10 +21,43 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from config import (
     COMPANIES, RISK_CATEGORIES, LLM_MODEL,
     LLM_MAX_NEW_TOKENS, LLM_TEMPERATURE, TOP_K,
-    EMBEDDINGS_DIR, USE_API, GROQ_MODEL,
+    EMBEDDINGS_DIR, USE_API, GROQ_MODEL, MIN_RELEVANT_CHUNKS,
+    LLM_EVIDENCE_CHUNKS, LLM_EVIDENCE_CHAR_LIMIT, LOW_EVIDENCE_RELEVANCE,
     get_embeddings_dir, get_risk_profiles_dir,
 )
+
+# Severity levels that the weak-evidence guardrail will pull down to "low".
+_INFLATED_SEVERITIES = ("medium", "high", "critical")
+
+
+class LLMGenerationError(RuntimeError):
+    """Raised when the LLM call fails (e.g. Groq rate limit / API error)."""
 from prompts.risk_extraction import build_prompt, RISK_PROFILE_JSON_SCHEMA
+
+SEVERITY_LEVELS = ("negligible", "low", "medium", "high", "critical")
+
+
+def compute_retrieval_confidence(
+    evidence_chunks: list[dict], num_query_templates: int
+) -> float:
+    """
+    Derive a calibrated confidence from retrieval signals instead of trusting
+    the LLM's self-reported confidence (which collapses to a constant on small
+    models). Combines the strongest chunk's relevance, the mean relevance, and
+    how consistently chunks surfaced across the category's query templates.
+    """
+    if not evidence_chunks:
+        return 0.15  # almost no relevant evidence -> low confidence
+
+    rels = [c.get("relevance", c.get("faiss_score", 0.0)) for c in evidence_chunks]
+    mean_rel = sum(rels) / len(rels)
+    max_rel = max(rels)
+
+    matches = [c.get("query_matches", 1) for c in evidence_chunks]
+    multiquery = (sum(matches) / len(matches)) / max(num_query_templates, 1)
+
+    conf = 0.5 * max_rel + 0.3 * mean_rel + 0.2 * multiquery
+    return round(min(1.0, max(0.0, conf)), 2)
 
 
 # ============================================================
@@ -88,8 +121,8 @@ def validate_risk_profile(profile: dict) -> dict:
         if field not in profile:
             profile[field] = default
 
-    # Validate severity
-    if profile["severity"] not in ("low", "medium", "high"):
+    # Validate severity against the full 5-level scale
+    if profile["severity"] not in SEVERITY_LEVELS:
         profile["severity"] = "low"
 
     # Validate confidence range
@@ -228,8 +261,10 @@ class RiskExtractor:
                 )
                 return chat_completion.choices[0].message.content
             except Exception as e:
+                # Surface the failure instead of returning "{}" (which would be
+                # silently parsed into a fake "not present / low" assessment).
                 print(f"API Error: {str(e)}")
-                return "{}"
+                raise LLMGenerationError(str(e)) from e
                 
         import torch  # type: ignore[import-not-found]
 
@@ -302,17 +337,52 @@ class RiskExtractor:
 
         print(f"  [{ticker}] {cat_name}: {len(evidence_chunks)} evidence chunks")
 
+        num_templates = len(risk_category.get("query_templates", [])) or 1
+
+        # Short-circuit: too little relevant evidence -> risk not present.
+        # Skips the LLM call entirely (cheaper + avoids fabricated severity).
+        if len(evidence_chunks) < MIN_RELEVANT_CHUNKS:
+            return validate_risk_profile({
+                "company": ticker,
+                "risk_category": cat_name,
+                "is_present": False,
+                "severity": "negligible",
+                "explanation": "No sufficiently relevant evidence for this risk category in the filing.",
+                "evidence_snippets": [],
+                "confidence": compute_retrieval_confidence([], num_templates),
+            })
+
+        # Only send the strongest few chunks (truncated) to the LLM to keep the
+        # request within the token budget. Full evidence is still used for the
+        # retrieval-based confidence below.
+        llm_chunks = evidence_chunks[:LLM_EVIDENCE_CHUNKS]
+
         # Build prompt
         system_prompt, user_prompt = build_prompt(
             ticker=ticker,
             company_name=company_name,
             risk_category=cat_name,
             risk_description=cat_desc,
-            evidence_chunks=evidence_chunks,
+            evidence_chunks=llm_chunks,
+            evidence_char_limit=LLM_EVIDENCE_CHAR_LIMIT,
         )
 
-        # Generate response
-        response = self.generate(system_prompt, user_prompt)
+        # Generate response. If the LLM call fails (e.g. rate limit), mark the
+        # category as failed instead of silently emitting a fake assessment.
+        try:
+            response = self.generate(system_prompt, user_prompt)
+        except LLMGenerationError as e:
+            print(f"    EXTRACTION FAILED: {cat_name} — {e}")
+            return {
+                "company": ticker,
+                "risk_category": cat_name,
+                "is_present": False,
+                "severity": "negligible",
+                "explanation": f"EXTRACTION FAILED (LLM error): {e}. This category was not assessed.",
+                "evidence_snippets": [],
+                "confidence": 0.0,
+                "extraction_failed": True,
+            }
 
         # Parse JSON
         profile = extract_json_from_response(response)
@@ -334,6 +404,28 @@ class RiskExtractor:
         profile["company"] = ticker
         profile["risk_category"] = cat_name
         profile = validate_risk_profile(profile)
+
+        # Override the LLM's self-reported confidence with a retrieval-derived
+        # one. Keep the model's own value for transparency/debugging.
+        profile["llm_confidence"] = profile["confidence"]
+        profile["confidence"] = compute_retrieval_confidence(
+            evidence_chunks, num_templates
+        )
+
+        # Weak-evidence guardrail: if even the best chunk is only weakly
+        # relevant, the evidence is too thin to justify medium/high — cap at
+        # "low". Strong single chunks (high relevance) are never capped, so the
+        # LLM keeps full authority on real evidence.
+        best_relevance = max(
+            (c.get("relevance", 0.0) for c in evidence_chunks), default=0.0
+        )
+        if (
+            profile["is_present"]
+            and best_relevance < LOW_EVIDENCE_RELEVANCE
+            and profile["severity"] in _INFLATED_SEVERITIES
+        ):
+            profile["llm_severity"] = profile["severity"]
+            profile["severity"] = "low"
 
         return profile
 
