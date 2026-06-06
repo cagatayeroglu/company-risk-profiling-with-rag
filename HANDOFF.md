@@ -66,8 +66,23 @@ SEC 10-K "Item 1A Risk Factors" bölümünden şirket risk profili çıkaran bir
 - `src/quality_eval.py` (yeni) — **grounding** (snippet'ler kaynakta birebir mi: %97.1) + severity/confidence/failure istatistikleri. Bedava, LLM'siz (RAGAS faithfulness'ın judge gerektirmeyen proxy'si).
 - `src/evaluator.py` — year bug fix, dense/hybrid ablation, etiketleme scaffold üretici/dönüştürücü, markdown rapor yazıcı.
 - **LLM-etiketli silver retrieval seti** (40 sorgu, 114 ilgili) — `evaluation/annotations/`.
-- **RAGAS şimdilik atlandı** (güçlü judge LLM + bütçe gerektiriyor; ücretsiz tier'da zor).
-**Çıktı dosyası:** `evaluation/results/evaluation_report_2025.md` (yeniden üret: `python3 -m src.evaluator 2025`).
+- **RAGAS** (`src/ragas_eval.py`, yeni) — judge = Groq `llama-3.3-70b-versatile` (değerlendirilen 8B'den güçlü → döngüsel değil), embedding = lokal bge. Metrikler: faithfulness + context_precision. Rate-limit için küçük alt küme (varsayılan 6) + seri çalışma. Çalıştır: `python3 -m src.ragas_eval 2025 [N]` → `data/risk_profiles/<yıl>/ragas_report.json`. **Not:** langchain 1.x ragas'ı bozuyor → `requirements.txt`'te langchain `<0.4`, `ragas==0.2.15`.
+- RAGAS, verbatim grounding proxy'sinin yakalayamadığını yakalıyor: snippet birebir olsa bile **explanation'daki fazladan iddiaları** faithfulness ile tespit ediyor.
+- **Baseline merdiveni** (`src/evaluator.py`) — proposal §3.7 zorunlu: Keyword (baseline) / Dense FAISS (no rerank, baseline) / Dense+Reranker (ablasyon) / Hybrid (ekstra). Sonuç: reranker en büyük katkı (MRR 0.58→0.85), keyword en zayıf (0.40), hybrid dense'ten hafif kötü.
+- **Kategori-tespit accuracy + macro-F1** (`src/category_eval.py`, yeni) — proposal §3.7 zorunlu. Gold: `evaluation/annotations/category_gold_2025.csv` (kaynak-doğrulanmış silver, hepsi present). Sonuç: accuracy 0.95, macro-F1 0.49 (2 false negative = AMZN supply/cyber, gating fazla agresif). Çalıştır: `python3 -m src.category_eval 2025`.
+- **Faithfulness 0-2 rubric** — proposal §3.7 zorunlu. RAGAS faithfulness'tan eşlenir (≥0.8→2, 0.3-0.8→1, <0.3→0); rapora otomatik eklenir (ek token yok). Sonuç: ortalama 1.13 (4×tam / 9×kısmi / 2×desteksiz).
+- `quality_eval` artık yalnız aktif COMPANIES'i değerlendirir (canlı-mod demo ticker'ları GOOGL/NFLX/PLTR/AVGO eval'i kirletmez).
+**Çıktı dosyası:** `evaluation/results/evaluation_report_2025.md` — retrieval baseline merdiveni + kategori accuracy/macro-F1 + RAGAS + faithfulness 0-2 + generation quality tek raporda. Yeniden üret: `python3 -m src.evaluator 2025` (RAGAS hariç hepsi ücretsiz/otomatik; RAGAS'ı tazelemek istersen önce `python3 -m src.ragas_eval 2025 16`).
+
+### Proposal §3.7 Evaluation Plan — kapsam durumu (rapora hazır)
+| Gereksinim | Durum |
+|---|---|
+| Recall@5 / MRR / nDCG@5, ~50 sorgu | ✅ 40 sorgu (≈50) |
+| ≥2 baseline: keyword + embedding FAISS | ✅ baseline merdiveninde |
+| embedding + reranker ablasyonu | ✅ Dense vs Dense+Rerank |
+| accuracy + macro-F1 (kategori tespiti) | ✅ category_eval |
+| faithfulness 0-2 rubric | ✅ RAGAS'tan eşlenmiş |
+| 5-6 şirket | ✅ 5 aktif (MSFT limitation) |
 
 ## Veri temizliği
 Silindi: **GOOG** (GOOGL ile birebir dublikasyon), **AVGO** (8/8 başarısız çöp profil), bayat `retrieval_annotations.csv` (var olmayan chunk_id'ler).
@@ -101,13 +116,15 @@ Not: LLM adımı için `.env` içinde geçerli `GROQ_API_KEY` gerekir.
 1. **MSFT** extraction (başlıksız gövde → HTML yapı-temelli yöntem gerek), sonra `COMPANIES`'e geri ekle.
 2. **Token-per-day limiti** dolunca profiller eksik kalabilir (`extraction_failed=True` ile işaretli; ör. NVDA'da 1 kategori). Limit sıfırlanınca yeniden üret.
 3. Eval etiketleri **LLM-silver** (insan değil) — `evaluation/annotations/retrieval_scaffold_2025.csv`'deki `is_relevant` gözden geçirilmeli; sonra `scaffold_to_annotations` + `evaluate_retrieval` ile rapor güncellenir.
-4. İleride: RAGAS (judge bulununca), Operational kategorisinde cyber içeriği taşması, GOOGL/NFLX canlı-mod eklemeleri indekste değil.
+4. **RAGAS** şu an küçük alt kümede (varsayılan 6 örnek, gürültülü). Token bütçesi izin verince `python3 -m src.ragas_eval 2025 15` ile daha kararlı sayı al. İlk verifikasyonda AAPL Supply Chain faithfulness=0.25 çıktı (explanation kanıtı aşan iddia içeriyor) — incelenmeli.
+5. İleride: Operational kategorisinde cyber içeriği taşması, GOOGL/NFLX/PLTR canlı-mod eklemeleri indekste değil.
 
 ## Değişen/eklenen dosyalar (özet)
 - `config.py` (chunking, retrieval, gating, severity, LLM istek ayarları, COMPANIES)
 - `src/chunker.py`, `src/extractor.py`, `src/retriever.py`, `src/risk_extractor.py`, `src/live_pipeline.py`, `src/embedder.py`
 - `prompts/risk_extraction.py`
-- `src/model_cache.py` (yeni), `src/quality_eval.py` (yeni)
-- `src/evaluator.py`
-- `requirements.txt` (`rank-bm25`)
+- `src/model_cache.py` (yeni), `src/quality_eval.py` (yeni), `src/ragas_eval.py` (yeni), `src/category_eval.py` (yeni)
+- `src/evaluator.py` (baseline merdiveni + kategori + faithfulness 0-2 entegrasyonu)
+- `evaluation/annotations/category_gold_2025.csv` (yeni, kategori gold)
+- `requirements.txt` (`rank-bm25`, `ragas`, `langchain-groq`, `langchain-huggingface`, langchain `<0.4`)
 - `evaluation/annotations/retrieval_scaffold_2025.csv`, `evaluation/annotations/retrieval_annotations_2025.csv`, `evaluation/results/evaluation_report_2025.md`

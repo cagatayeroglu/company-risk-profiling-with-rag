@@ -25,7 +25,7 @@ import glob
 from collections import Counter
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from config import get_risk_profiles_dir, get_extracted_dir, DEFAULT_YEAR
+from config import get_risk_profiles_dir, get_extracted_dir, DEFAULT_YEAR, COMPANIES
 
 
 def _normalize(text: str) -> str:
@@ -48,8 +48,12 @@ def _load_source(year: int, ticker: str) -> str | None:
 
 def evaluate_quality(year: int = DEFAULT_YEAR) -> dict:
     profiles_dir = get_risk_profiles_dir(year)
+    # Restrict to the evaluated dataset (the active COMPANIES), so eval stats
+    # stay consistent with category detection. Live-mode demo tickers (e.g.
+    # GOOGL/NFLX/PLTR) have profiles on disk but are not part of the dataset.
     files = sorted(
-        f for f in glob.glob(os.path.join(profiles_dir, "*_risk_profile.json"))
+        os.path.join(profiles_dir, f"{t}_risk_profile.json") for t in COMPANIES
+        if os.path.exists(os.path.join(profiles_dir, f"{t}_risk_profile.json"))
     )
     if not files:
         print(f"No risk profiles found in {profiles_dir}")
