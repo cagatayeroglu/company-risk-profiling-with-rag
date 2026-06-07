@@ -3,7 +3,7 @@
 **CS 455 / CS 555 — Large Language Models — Spring 2025/2026**
 **Category:** (A) Application / System Building + (C) Evaluation / Analysis
 
-**🚀 Live Demo:** https://company-risk-profiling-with-rag-ysey7ofzsqh6xemgtw9tb4.streamlit.app/
+** Live Demo:** https://company-risk-profiling-with-rag-ysey7ofzsqh6xemgtw9tb4.streamlit.app/
 
 An LLM-based financial document-intelligence system that automatically extracts, structures, and
 compares company-level **risk profiles** from SEC Form 10-K filings using a multi-document
