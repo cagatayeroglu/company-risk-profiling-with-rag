@@ -3,6 +3,8 @@
 **CS 455 / CS 555 — Large Language Models — Spring 2025/2026**
 **Category:** (A) Application / System Building + (C) Evaluation / Analysis
 
+**🚀 Live Demo:** https://company-risk-profiling-with-rag-ysey7ofzsqh6xemgtw9tb4.streamlit.app/
+
 An LLM-based financial document-intelligence system that automatically extracts, structures, and
 compares company-level **risk profiles** from SEC Form 10-K filings using a multi-document
 Retrieval-Augmented Generation (RAG) pipeline. For each of eight risk categories the system
@@ -98,9 +100,12 @@ python3 -c "from src.embedder import build_index_for_year; build_index_for_year(
 # 5. LLM structured risk extraction (requires GROQ_API_KEY)
 python3 -c "from src.risk_extractor import RiskExtractor; e=RiskExtractor(); e.load_model(); e.load_retriever(year=2025); e.extract_all_profiles(year=2025)"
 
-# 6. Launch the interactive dashboard
+# 6. Launch the interactive dashboard locally
 streamlit run app.py
 ```
+
+> A hosted version is available — no setup required:
+> **https://company-risk-profiling-with-rag-ysey7ofzsqh6xemgtw9tb4.streamlit.app/**
 
 **Dashboard features:** risk heatmap, top risks per company, evidence explorer, pairwise company
 comparison, multi-year (FY2021–2025) selection, and **live on-demand analysis** — type any ticker
